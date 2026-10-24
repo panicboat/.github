@@ -24,6 +24,7 @@ jobs:
       - name: Parse tag
         id: parse
         env:
+          # `inputs` in a reusable workflow holds only its own workflow_call inputs, so the caller's dispatch input `tag` is read from the event.
           TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
           set -euo pipefail
