@@ -1,0 +1,13 @@
+# Checks that every action is pinned to a full commit SHA.
+name: Lint GitHub Actions
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable--lint-actions.yaml

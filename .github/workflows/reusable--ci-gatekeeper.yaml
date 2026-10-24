@@ -1,0 +1,23 @@
+# Waits for every other workflow on a pull request so that one required check gates the merge.
+name: 'Reusable - CI Gatekeeper'
+
+on:
+  workflow_call:
+    inputs:
+      exclude-workflow-names:
+        required: false
+        type: string
+        default: ''
+        description: 'Workflow names the gatekeeper does not wait for, one per line'
+
+jobs:
+  ci-gatekeeper:
+    name: CI Gatekeeper
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for other workflows
+        uses: int128/wait-for-workflows-action@b320164b37276db89a12829914d6eb6ef4973d2b # v1.108.0
+        with:
+          max-timeout-seconds: 1800
+          exclude-workflow-names: ${{ inputs.exclude-workflow-names }}

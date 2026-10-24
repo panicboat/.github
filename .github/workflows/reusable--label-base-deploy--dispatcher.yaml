@@ -1,0 +1,49 @@
+# Adds deploy:{service} labels to a pull request from the stack paths it changes.
+name: 'Reusable - Label Base Deploy - Dispatcher'
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        required: true
+        type: string
+        description: 'GitHub App ID for authentication'
+      config-path:
+        required: false
+        type: string
+        default: 'workflow-config.yaml'
+        description: 'Path to the workflow config that maps stack paths to services'
+    secrets:
+      private-key:
+        required: true
+        description: 'GitHub App private key for authentication'
+
+jobs:
+  dispatch-labels:
+    name: 'Dispatch Labels'
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.private-key }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Get PR information
+        id: pr-info
+        uses: jwalton/gh-find-current-pr@f3d61b485d2801773f7a07b2aaa3306bd8f8e653 # v1.3.5
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          state: all
+        continue-on-error: true
+
+      - name: Dispatch Labels
+        uses: panicboat/deploy-actions/label-dispatcher@1ab520e5ef33b8d744982762ffc4e08009a34744 # v2.0.1
+        with:
+          pr-number: ${{ steps.pr-info.outputs.number }}
+          repository: ${{ github.repository }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          config-path: ${{ inputs.config-path }}
