@@ -1,0 +1,60 @@
+# Runs release-please for each release-please-config.json to open release pull requests and publish releases.
+name: 'Reusable - Release - Please'
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        required: true
+        type: string
+        description: 'GitHub App ID for authentication'
+    secrets:
+      private-key:
+        required: true
+        description: 'GitHub App private key for authentication'
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      paths: ${{ steps.find.outputs.paths }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Find release-please configs
+        id: find
+        run: |
+          set -euo pipefail
+          paths=$(bash .shared-workflows/scripts/release-please/find-configs.sh)
+          echo "paths=$paths" >> "$GITHUB_OUTPUT"
+
+  release-please:
+    needs: discover
+    if: needs.discover.outputs.paths != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        path: ${{ fromJson(needs.discover.outputs.paths) }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.private-key }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: ${{ matrix.path == '.' && 'release-please-config.json' || format('{0}/release-please-config.json', matrix.path) }}
+          manifest-file: ${{ matrix.path == '.' && 'release-please-manifest.json' || format('{0}/release-please-manifest.json', matrix.path) }}

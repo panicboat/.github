@@ -1,0 +1,73 @@
+# Applies a service's apply_trigger: release environments when its release is published or its tag is dispatched.
+name: 'Reusable - Release - Deploy'
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        required: true
+        type: string
+        description: 'GitHub App ID for authentication'
+    secrets:
+      private-key:
+        required: true
+        description: 'GitHub App private key for authentication'
+
+jobs:
+  resolve:
+    name: 'Resolve Release Targets'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+    outputs:
+      targets: ${{ steps.resolve.outputs.targets }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Resolve release targets
+        id: resolve
+        run: |
+          set -euo pipefail
+          service=$(bash .shared-workflows/scripts/terragrunt-release/release-service.sh --tag "$TAG")
+          targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh "$service")
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  apply:
+    name: 'Apply Release (${{ matrix.target.service }}:${{ matrix.target.environment }})'
+    needs: resolve
+    if: needs.resolve.outputs.targets != '[]'
+    concurrency:
+      group: terragrunt-apply-${{ matrix.target.working_directory }}
+      cancel-in-progress: false
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.resolve.outputs.targets) }}
+      fail-fast: false
+    uses: $/.github/workflows/reusable--terragrunt-runner.yaml
+    with:
+      service-name: ${{ matrix.target.service }}
+      environment: ${{ matrix.target.environment }}
+      action-type: apply
+      iam-role: ${{ matrix.target.iam_role_apply }}
+      aws-region: ${{ matrix.target.aws_region }}
+      working-directory: ${{ matrix.target.working_directory }}
+      app-id: ${{ inputs.app-id }}
+      ref: ${{ needs.resolve.outputs.tag }}
+      github-environment: ${{ matrix.target.environment }}
+    secrets:
+      private-key: ${{ secrets.private-key }}

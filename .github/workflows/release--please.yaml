@@ -1,0 +1,21 @@
+# Runs release-please for this repository to open release pull requests and publish releases.
+name: 'Release - Please'
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable--release--please.yaml
+    with:
+      app-id: ${{ vars.APP_ID }}
+    secrets:
+      private-key: ${{ secrets.APP_PRIVATE_KEY }}
