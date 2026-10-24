@@ -1,0 +1,205 @@
+# Resolves deploy labels into targets and runs each stack the caller's workflow config enables: terragrunt plan/apply, container builds, and kustomize/helmfile diffs on pull requests.
+name: 'Reusable - Label Base Deploy - Resolver'
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        required: true
+        type: string
+        description: 'GitHub App ID for authentication'
+      config-path:
+        required: false
+        type: string
+        default: 'workflow-config.yaml'
+        description: 'Path to the workflow config that defines the stacks and services'
+    secrets:
+      private-key:
+        required: true
+        description: 'GitHub App private key for authentication'
+
+jobs:
+  resolve:
+    name: 'Resolve Targets'
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.resolver.outputs.targets }}
+      has-targets: ${{ steps.resolver.outputs.has-targets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Validate apply_trigger
+        run: bash .shared-workflows/scripts/terragrunt-release/validate-apply-trigger.sh "${{ inputs.config-path }}"
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.private-key }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Get PR information
+        id: pr-info
+        uses: jwalton/gh-find-current-pr@f3d61b485d2801773f7a07b2aaa3306bd8f8e653 # v1.3.5
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          state: all
+        continue-on-error: true
+
+      - name: Label Resolver
+        id: resolver
+        uses: panicboat/deploy-actions/label-resolver@1ab520e5ef33b8d744982762ffc4e08009a34744 # v2.0.1
+        with:
+          repository: ${{ github.repository }}
+          pr-number: ${{ steps.pr-info.outputs.number }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          config-path: ${{ inputs.config-path }}
+
+  deploy-terragrunt:
+    name: 'Deploy Terragrunt (${{ matrix.target.service }}:${{ matrix.target.environment }})'
+    needs: resolve
+    if: |
+      needs.resolve.outputs.has-targets == 'true' &&
+      contains(needs.resolve.outputs.targets, '"stack":"terragrunt"')
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.resolve.outputs.targets) }}
+      fail-fast: false
+    uses: $/.github/workflows/reusable--terragrunt-runner.yaml
+    with:
+      service-name: ${{ matrix.target.service }}
+      environment: ${{ matrix.target.environment }}
+      action-type: ${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.apply_trigger == 'merge' && 'apply' || '')) || '' }}
+      iam-role: ${{ github.event_name == 'pull_request' && matrix.target.iam_role_plan || matrix.target.iam_role_apply }}
+      aws-region: ${{ matrix.target.aws_region }}
+      working-directory: ${{ matrix.target.working_directory }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  deploy-container:
+    name: 'Deploy Container (${{ matrix.target.service }})'
+    needs: resolve
+    if: |
+      needs.resolve.outputs.has-targets == 'true' &&
+      contains(needs.resolve.outputs.targets, '"stack":"container"')
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.resolve.outputs.targets) }}
+      fail-fast: false
+    concurrency:
+      group: image-build-${{ matrix.target.stack_id }}-${{ matrix.target.service }}-${{ github.sha }}
+      cancel-in-progress: false
+    uses: $/.github/workflows/reusable--container-builder.yaml
+    with:
+      image-name: ${{ matrix.target.stack == 'container' && matrix.target.service || '' }}
+      working-directory: ${{ matrix.target.working_directory }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  deploy-kustomize:
+    name: 'Deploy Kustomize (${{ matrix.target.service }}:${{ matrix.target.environment }})'
+    needs: resolve
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.resolve.outputs.has-targets == 'true' &&
+      contains(needs.resolve.outputs.targets, '"stack":"kustomize"')
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.resolve.outputs.targets) }}
+      fail-fast: false
+    uses: $/.github/workflows/reusable--kubernetes-builder.yaml
+    with:
+      service-name: ${{ matrix.target.service }}
+      environment: ${{ matrix.target.environment }}
+      kustomization-directory: ${{ matrix.target.stack == 'kustomize' && matrix.target.working_directory || '' }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  helmfile-targets-group:
+    name: 'Group Helmfile Targets by Environment'
+    needs: resolve
+    if: |
+      needs.resolve.outputs.has-targets == 'true' &&
+      contains(needs.resolve.outputs.targets, '"stack":"helmfile"')
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.group.outputs.environments }}
+    steps:
+      - name: Group by environment
+        id: group
+        env:
+          TARGETS: ${{ needs.resolve.outputs.targets }}
+        run: |
+          set -euo pipefail
+          grouped=$(echo "$TARGETS" | jq -c '
+            [.[] | select(.stack == "helmfile")]
+            | group_by(.environment)
+            | map({environment: .[0].environment, services: [.[].service]})
+          ')
+          echo "environments=$grouped" >> "$GITHUB_OUTPUT"
+
+  deploy-helmfile-hydrate:
+    name: 'Hydrate Helmfile (${{ matrix.env.environment }})'
+    needs: helmfile-targets-group
+    strategy:
+      matrix:
+        env: ${{ fromJson(needs.helmfile-targets-group.outputs.environments) }}
+      fail-fast: false
+    uses: $/.github/workflows/reusable--kubernetes-hydrator.yaml
+    with:
+      environment: ${{ matrix.env.environment }}
+      services: ${{ toJson(matrix.env.services) }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  deploy-helmfile:
+    name: 'Deploy Helmfile (${{ matrix.target.service }}:${{ matrix.target.environment }})'
+    needs: [resolve, deploy-helmfile-hydrate]
+    if: |
+      github.event_name == 'pull_request' &&
+      needs.resolve.outputs.has-targets == 'true' &&
+      contains(needs.resolve.outputs.targets, '"stack":"helmfile"')
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.resolve.outputs.targets) }}
+      fail-fast: false
+    uses: $/.github/workflows/reusable--kubernetes-builder.yaml
+    with:
+      service-name: ${{ matrix.target.service }}
+      environment: ${{ matrix.target.environment }}
+      kustomization-directory: ${{ matrix.target.stack == 'helmfile' && format('kubernetes/manifests/{0}/{1}', matrix.target.environment, matrix.target.service) || '' }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  deployment-summary:
+    name: 'Deployment Summary'
+    needs: [resolve, deploy-terragrunt, deploy-container, deploy-kustomize, deploy-helmfile-hydrate, deploy-helmfile]
+    if: always() && needs.resolve.outputs.has-targets == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "📊 Deployment Summary"
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Targets: ${{ needs.resolve.outputs.targets }}"
+          echo "Terragrunt Job Status: ${{ needs.deploy-terragrunt.result }}"
+          echo "Container Job Status: ${{ needs.deploy-container.result }}"
+          echo "Kustomize Job Status: ${{ needs.deploy-kustomize.result }}"
+          echo "Helmfile Hydrate Job Status: ${{ needs.deploy-helmfile-hydrate.result }}"
+          echo "Helmfile Job Status: ${{ needs.deploy-helmfile.result }}"
