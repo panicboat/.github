@@ -16,6 +16,11 @@ on:
         required: true
         type: string
         description: 'Directory containing the kustomization.yaml to diff (skips the job when empty)'
+      ref:
+        required: false
+        type: string
+        default: ''
+        description: 'Git ref to check out for the head manifests (empty uses the default ref of the triggering event)'
       app-id:
         required: true
         type: string
@@ -51,8 +56,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          ref: ${{ inputs.ref }}
 
       - name: Checkout base ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

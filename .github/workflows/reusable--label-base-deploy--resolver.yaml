@@ -182,6 +182,8 @@ jobs:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
       kustomization-directory: ${{ matrix.target.stack == 'helmfile' && format('kubernetes/manifests/{0}/{1}', matrix.target.environment, matrix.target.service) || '' }}
+      # The hydrate job commits to the pull request branch, which the default merge ref does not contain.
+      ref: ${{ github.head_ref }}
       app-id: ${{ inputs.app-id }}
     secrets:
       private-key: ${{ secrets.private-key }}
