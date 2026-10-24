@@ -1,0 +1,39 @@
+# Checks that the self checkout resolves to the running workflow commit and that its scripts run.
+name: 'Test Shared Workflows - Checkout'
+
+on:
+  workflow_call:
+
+jobs:
+  self-checkout:
+    name: Self checkout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Verify the self checkout is the running workflow commit
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          actual="$(git -C .shared-workflows rev-parse HEAD)"
+          if [ "${actual}" != "${WORKFLOW_SHA}" ]; then
+            echo "expected ${WORKFLOW_SHA}, got ${actual}" >&2
+            exit 1
+          fi
+
+      - name: Run a script from the self checkout
+        run: |
+          actual="$(bash .shared-workflows/scripts/release-please/find-configs.sh)"
+          if [ "${actual}" != '["."]' ]; then
+            echo "expected [\".\"], got ${actual}" >&2
+            exit 1
+          fi

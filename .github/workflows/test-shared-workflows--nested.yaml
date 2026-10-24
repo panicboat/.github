@@ -1,0 +1,9 @@
+# Calls the self checkout test through `$/` the way the shared workflows call each other.
+name: 'Test Shared Workflows - Nested'
+
+on:
+  workflow_call:
+
+jobs:
+  checkout:
+    uses: $/.github/workflows/test-shared-workflows--checkout.yaml

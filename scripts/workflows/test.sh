@@ -33,6 +33,11 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
+test_nested_test_workflow_uses_dollar_slash() {
+    local workflow="${workflows_dir}/test-shared-workflows--nested.yaml"
+    assert_eq '$/.github/workflows/test-shared-workflows--checkout.yaml' "$(yq '.jobs[].uses' "${workflow}")"
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e
