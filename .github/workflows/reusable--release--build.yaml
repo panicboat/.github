@@ -1,0 +1,70 @@
+# Builds the container image of a published service release or a dispatched tag and tags it with the release version.
+name: 'Reusable - Release - Build'
+
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        required: true
+        type: string
+        description: 'GitHub App ID for authentication'
+    secrets:
+      private-key:
+        required: true
+        description: 'GitHub App private key for authentication'
+
+jobs:
+  detect-component:
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.parse.outputs.service }}
+      version: ${{ steps.parse.outputs.version }}
+      working-directory: ${{ steps.resolve-dir.outputs.working-directory }}
+    steps:
+      - name: Parse tag
+        id: parse
+        env:
+          # `inputs` in a reusable workflow holds only its own workflow_call inputs, so the caller's dispatch input `tag` is read from the event.
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^([a-z-]+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Tag '$TAG' does not match expected pattern <service>-v<X.Y.Z>"
+            exit 1
+          fi
+          SERVICE="${BASH_REMATCH[1]}"
+          VERSION="v${BASH_REMATCH[2]}"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve working directory
+        id: resolve-dir
+        env:
+          SERVICE: ${{ steps.parse.outputs.service }}
+        run: |
+          set -euo pipefail
+          # Use workflow-config.yaml as the source of truth for deployable stacks.
+          while IFS= read -r path_pattern; do
+            dir="${path_pattern//\{service\}/$SERVICE}"
+            if [ -d "$dir" ]; then
+              echo "working-directory=$dir" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done < <(yq -r '.stacks[] | select(.name == "container") | .paths[]' workflow-config.yaml)
+          echo "::error::No directory found for service '$SERVICE' under any container stack path in workflow-config.yaml"
+          exit 1
+
+  container-build:
+    needs: detect-component
+    concurrency:
+      group: image-build-${{ needs.detect-component.outputs.service }}-${{ github.sha }}
+      cancel-in-progress: false
+    uses: $/.github/workflows/reusable--container-builder.yaml
+    with:
+      image-name: ${{ needs.detect-component.outputs.service }}
+      working-directory: ${{ needs.detect-component.outputs.working-directory }}
+      app-id: ${{ inputs.app-id }}
+      semver-tag: ${{ needs.detect-component.outputs.version }}
+    secrets:
+      private-key: ${{ secrets.private-key }}

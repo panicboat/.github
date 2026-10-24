@@ -1,0 +1,70 @@
+# Deletes stale pr- and sha- tags and untagged images of the given service containers in ghcr.io.
+name: 'Reusable - Cleanup Container Images'
+
+on:
+  workflow_call:
+    inputs:
+      services:
+        required: true
+        type: string
+        description: 'JSON array of service names whose containers are cleaned (e.g. ["monolith","frontend"])'
+
+jobs:
+  cleanup-container:
+    name: 'Cleanup ${{ matrix.service }}'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: ${{ fromJson(inputs.services) }}
+      fail-fast: false
+    steps:
+      - name: Clean old PR tags
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ github.event.repository.name }}/${{ matrix.service }}
+          delete-tags: ^pr-
+          older-than: 1 days
+          exclude-tags: ^(latest|v\d+\.\d+\.\d+.*)$
+          use-regex: true
+          validate: true
+
+      - name: Clean SHA tags
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ github.event.repository.name }}/${{ matrix.service }}
+          delete-tags: ^sha-
+          exclude-tags: ^(latest|v\d+\.\d+\.\d+.*)$
+          use-regex: true
+          validate: true
+
+      - name: Clean untagged images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ github.event.repository.name }}/${{ matrix.service }}
+          keep-n-untagged: 0
+          delete-orphaned-images: true
+          delete-ghost-images: true
+          delete-partial-images: true
+          exclude-tags: ^(latest|v\d+\.\d+\.\d+.*)$
+          use-regex: true
+          validate: true
+
+  summary:
+    name: 'Cleanup Summary'
+    needs: cleanup-container
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        env:
+          SERVICES: ${{ inputs.services }}
+        run: |
+          echo "📊 Cleanup Summary"
+          echo "Services: ${SERVICES}"
+          echo "Cleanup job status: ${{ needs.cleanup-container.result }}"

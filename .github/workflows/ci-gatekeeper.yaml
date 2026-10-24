@@ -1,0 +1,14 @@
+# Waits for every other workflow on a pull request so that one required check gates the merge.
+name: 'CI Gatekeeper'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - '**'
+
+jobs:
+  gatekeeper:
+    permissions:
+      actions: read
+    uses: ./.github/workflows/reusable--ci-gatekeeper.yaml

@@ -1,0 +1,7 @@
+registries:
+  - type: standard
+    ref: v4.311.0 # renovate: github_release aquaproj/aqua-registry
+
+packages:
+  - name: kubernetes-sigs/kustomize@kustomize/v5.6.0
+  - name: mikefarah/yq@v4.54.1

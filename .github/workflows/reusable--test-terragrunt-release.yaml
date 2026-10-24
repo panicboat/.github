@@ -1,0 +1,29 @@
+# Validates the caller's terragrunt apply_trigger values and the release-please configs of its release environments.
+name: 'Reusable - Test Terragrunt Release'
+
+on:
+  workflow_call:
+
+jobs:
+  validate:
+    name: 'Validate terragrunt release config'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Validate apply_trigger
+        run: bash .shared-workflows/scripts/terragrunt-release/validate-apply-trigger.sh
+
+      - name: Check release-please configs
+        run: bash .shared-workflows/scripts/terragrunt-release/check-release-configs.sh
