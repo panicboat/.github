@@ -18,7 +18,7 @@ workflow と scripts の正本を `panicboat/.github` の 1 か所に置き、�
 
 - `deploy-dystopia-lambda.yaml` は集約しない。
   - トリガーの paths から build の手順まで dystopia 専用で、集約しても dystopia 専用の workflow が置き場を変えるだけになるため（ユーザー決定）。
-- 集約で他のリポジトリから使えるようになる処理を、実際に有効にすることはしない。
+- 汎用化した処理を、今使っていないリポジトリから呼ぶようにはしない（呼び出し用 workflow を足さない）。
   - 例えば platform で docs-sync-check を、monorepo で renovate-major-review を動かすには、Bedrock の OIDC subject と GitHub environment を足す別の作業が要る。
 - deploy-actions の composite action（label-dispatcher・label-resolver）は動かさない。
 
