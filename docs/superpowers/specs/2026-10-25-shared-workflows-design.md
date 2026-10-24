@@ -84,6 +84,8 @@ workflow と scripts の正本を `panicboat/.github` の 1 か所に置き、�
 
 ### Self Checkout
 
+- 共通の workflow から別の共通の workflow を呼ぶときは `$/.github/workflows/<file>` を使う。
+  - `$/` は、その行が書かれたファイルのリポジトリと実行中の commit を指すので、呼び出し元が固定した SHA が入れ子の中まで揃う。
 - 共通の workflow は、呼び出し元を checkout したあと、`${{ job.workflow_repository }}` を `${{ job.workflow_sha }}` で別のパスに checkout し、そこにある scripts を実行する。
   - reusable workflow の中の `actions/checkout` は呼び出し元を取ってくるので、`bash .github/scripts/...` のままでは呼び出し元の scripts が走るため。
   - 呼び出し元が固定した 1 つの SHA で、workflow と scripts が揃う。
@@ -114,9 +116,10 @@ workflow と scripts の正本を `panicboat/.github` の 1 か所に置き、�
 
 ### Permissions And Secrets
 
-- 共通の workflow は `permissions` を宣言しない。
-  - 呼び出す側の job が、そのリポジトリで必要な分だけを付ける。
-  - 呼ばれた側が宣言すると、使わない stack の分まで全リポジトリが付ける必要が出るため。
+- 複数の stack をまとめる共通の workflow（resolver と、そこから呼ばれる workflow）は `permissions` を宣言しない。
+  - 呼び出す側の job が、そのリポジトリで使う stack の分だけを付ける。
+  - 呼ばれた側が呼び出し側より強い権限を宣言すると、その job を使わないリポジトリでも workflow が起動時に失敗するため。
+- 1 つの用途だけの共通の workflow（docs-sync-check・renovate-major-review）は、job ごとの最小権限を今どおり宣言し、呼び出す側はその和を付ける。
 - GitHub App の id と秘密鍵は、今と同じく入力（`app-id`）と secret（`private-key`）で明示的に渡す。
 - Bedrock の role ARN は、全リポジトリで同じ master アカウントの role なので、共通の workflow に書いてよい。
   - OIDC の subject は呼び出し元のリポジトリと environment で決まるので、既存の 2 つの subject はそのまま使える。
@@ -161,7 +164,7 @@ workflow と scripts の正本を `panicboat/.github` の 1 か所に置き、�
 - dispatcher の release-please 除外条件は、両リポジトリで有効にする。
   - monorepo にも release--plan があり、除外しないと release-please の PR を deploy ラベルと release--plan で二重に plan するため。
 - 共通の workflow のファイル名は、今の名前を基本にする。
-  - 呼ばれる側は `reusable--<今の名前>`（例: `reusable--label-base-deploy--resolver.yaml`、`reusable--lint-actions.yaml`）にし、`panicboat/.github` 自身の呼び出し用 workflow と区別する。
+  - 呼ばれる側は、今 `reusable--` で始まるものはその名前のまま、それ以外は `reusable--<今の名前>`（例: `reusable--label-base-deploy--resolver.yaml`、`reusable--lint-actions.yaml`）にし、`panicboat/.github` 自身の呼び出し用 workflow と区別する。
   - 各リポジトリの呼び出し用 workflow は今のファイル名のままにする。
 - platform の resolver にある `terragrunt-shared` stack の除外は、どの `workflow-config.yaml` にもない stack なので、移すときに消す。
 - container-builder の runner は今と同じ `ubuntu-26.04-arm` にする。
