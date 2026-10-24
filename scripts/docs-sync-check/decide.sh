@@ -57,7 +57,14 @@ if [ "$is_approved" = "true" ]; then
   exit 0
 fi
 
-if ! grep -qE "$scope_pattern" <<<"$changed_files"; then
+scope_status=0
+grep -qE -e "$scope_pattern" <<<"$changed_files" || scope_status=$?
+if [ "$scope_status" -gt 1 ]; then
+  echo "SCOPE_PATTERN is not a valid extended regular expression: ${scope_pattern}" >&2
+  exit 1
+fi
+
+if [ "$scope_status" -eq 1 ]; then
   emit skip-unchanged
   exit 0
 fi

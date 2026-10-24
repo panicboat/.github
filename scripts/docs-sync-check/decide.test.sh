@@ -45,9 +45,10 @@ check push_after_approval_without_dystopia synchronize '' true User false '' $'p
 check skips_changes_outside_the_scope_pattern opened '' false User false '' $'dystopia/a.rb' skip-unchanged false '^platform/'
 check judges_changes_inside_the_scope_pattern opened '' false User false '' $'platform/a.tf' judge false '^platform/'
 
-check_requires_scope_pattern() {
-  local name="$1" actual
-  if actual="$(printf '%s' $'dystopia/a.rb' | env -u SCOPE_PATTERN EVENT_ACTION=opened EVENT_LABEL='' APPROVED=false AUTHOR_TYPE=Bot BODY_OR_BASE_CHANGED=false PRIOR_STATE='' bash "$decide" 2>&1)"; then
+check_rejects_scope_pattern() {
+  local name="$1" author="$2" actual
+  shift 2
+  if actual="$(printf '%s' $'dystopia/a.rb' | env "$@" EVENT_ACTION=opened EVENT_LABEL='' APPROVED=false AUTHOR_TYPE="$author" BODY_OR_BASE_CHANGED=false PRIOR_STATE='' bash "$decide" 2>&1)"; then
     echo "FAIL ${name}"
     echo "  expected a non-zero exit, actual output: ${actual//$'\n'/ | }"
     failed=1
@@ -60,6 +61,7 @@ check_requires_scope_pattern() {
   fi
 }
 
-check_requires_scope_pattern rejects_missing_scope_pattern_even_when_the_event_exits_early
+check_rejects_scope_pattern rejects_missing_scope_pattern_even_when_the_event_exits_early Bot -u SCOPE_PATTERN
+check_rejects_scope_pattern rejects_invalid_scope_pattern User SCOPE_PATTERN='('
 
 exit "$failed"
