@@ -1,5 +1,5 @@
 # Exercises the nested reusable workflow call and the self checkout that the shared workflows rely on.
-name: Test Shared Workflows
+name: 'Self - Test Shared Workflows'
 
 on:
   push:
@@ -10,4 +10,4 @@ jobs:
   test:
     permissions:
       contents: read
-    uses: ./.github/workflows/test-shared-workflows--nested.yaml
+    uses: ./.github/workflows/self--test-shared-workflows--nested.yaml

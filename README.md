@@ -13,6 +13,7 @@ panicboat アカウントのリポジトリで共有する GitHub の設定を�
 呼び出し側は `uses: panicboat/.github/.github/workflows/<file>@<sha> # vX.Y.Z` と書いて、release の commit SHA に固定する。
 固定した SHA は Renovate が更新する。
 `.github/workflows/internal--*.yaml` は、共通の workflow の中からだけ呼ぶ workflow で、他のリポジトリからは呼ばない。
+`.github/workflows/self--*.yaml` は、このリポジトリ自身のイベントで動く workflow で、他のリポジトリからは呼ばない。
 
 ```yaml
 jobs:

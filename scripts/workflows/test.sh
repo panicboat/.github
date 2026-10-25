@@ -42,14 +42,28 @@ test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
 }
 
 test_nested_test_workflow_uses_dollar_slash() {
-    local workflow="${workflows_dir}/test-shared-workflows--nested.yaml"
-    assert_eq '$/.github/workflows/test-shared-workflows--checkout.yaml' "$(yq '.jobs[].uses' "${workflow}")"
+    local workflow="${workflows_dir}/self--test-shared-workflows--nested.yaml"
+    assert_eq '$/.github/workflows/self--test-shared-workflows--checkout.yaml' "$(yq '.jobs[].uses' "${workflow}")"
 }
 
 test_nested_calls_resolve_to_existing_workflows() {
     local target
     for target in $(yq -N '.jobs[].uses | select(. != null and test("^\\$/"))' "${workflows_dir}"/*.y*ml); do
         [ -f "${repo_root}/${target#\$/}" ] || { echo "  missing: ${target}" >&2; exit 1; }
+    done
+}
+
+test_workflows_carry_matching_file_and_name_prefix() {
+    local workflow file prefix
+    for workflow in "${workflows_dir}"/*; do
+        file="$(basename "${workflow}")"
+        case "${file}" in
+            reusable--*.yaml) prefix='Reusable - ' ;;
+            internal--*.yaml) prefix='Internal - ' ;;
+            self--*.yaml) prefix='Self - ' ;;
+            *) echo "  unknown prefix: ${file}" >&2; exit 1 ;;
+        esac
+        [[ "$(yq '.name' "${workflow}")" == "${prefix}"* ]] || { echo "  name mismatch: ${file}" >&2; exit 1; }
     done
 }
 

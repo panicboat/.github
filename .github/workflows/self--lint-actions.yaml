@@ -1,5 +1,5 @@
 # Checks that every action is pinned to a full commit SHA.
-name: Lint GitHub Actions
+name: 'Self - Lint GitHub Actions'
 
 on:
   push:

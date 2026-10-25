@@ -1,5 +1,5 @@
 # Checks that the self checkout resolves to the running workflow commit and that its scripts run.
-name: 'Test Shared Workflows - Checkout'
+name: 'Self - Test Shared Workflows - Checkout'
 
 on:
   workflow_call:
