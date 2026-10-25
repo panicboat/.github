@@ -100,7 +100,7 @@ jobs:
     concurrency:
       group: image-build-${{ matrix.target.stack_id }}-${{ matrix.target.service }}-${{ github.sha }}
       cancel-in-progress: false
-    uses: $/.github/workflows/reusable--container-builder.yaml
+    uses: $/.github/workflows/internal--image-builder.yaml
     with:
       image-name: ${{ matrix.target.stack == 'container' && matrix.target.service || '' }}
       working-directory: ${{ matrix.target.working_directory }}
@@ -119,7 +119,7 @@ jobs:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
       fail-fast: false
-    uses: $/.github/workflows/reusable--kubernetes-builder.yaml
+    uses: $/.github/workflows/internal--kustomize-builder.yaml
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
@@ -158,7 +158,7 @@ jobs:
       matrix:
         env: ${{ fromJson(needs.helmfile-targets-group.outputs.environments) }}
       fail-fast: false
-    uses: $/.github/workflows/reusable--kubernetes-hydrator.yaml
+    uses: $/.github/workflows/internal--helmfile-hydrator.yaml
     with:
       environment: ${{ matrix.env.environment }}
       services: ${{ toJson(matrix.env.services) }}
@@ -177,7 +177,7 @@ jobs:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
       fail-fast: false
-    uses: $/.github/workflows/reusable--kubernetes-builder.yaml
+    uses: $/.github/workflows/internal--kustomize-builder.yaml
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}

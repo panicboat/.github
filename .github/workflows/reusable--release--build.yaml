@@ -60,7 +60,7 @@ jobs:
     concurrency:
       group: image-build-${{ needs.detect-component.outputs.service }}-${{ github.sha }}
       cancel-in-progress: false
-    uses: $/.github/workflows/reusable--container-builder.yaml
+    uses: $/.github/workflows/internal--image-builder.yaml
     with:
       image-name: ${{ needs.detect-component.outputs.service }}
       working-directory: ${{ needs.detect-component.outputs.working-directory }}
