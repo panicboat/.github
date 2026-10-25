@@ -150,7 +150,7 @@ jobs:
 
       - name: Judge with Claude
         id: claude
-        uses: anthropics/claude-code-action@16f9f71ab9c490faf367f94dd294897edc25be33 # v1.0.261
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         env:
           # The Bedrock role only allows Sonnet 4.6, so background tasks must not fall back to Haiku.
           ANTHROPIC_DEFAULT_HAIKU_MODEL: global.anthropic.claude-sonnet-4-6
