@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/panicboat/.github/compare/v2.0.0...v3.0.0) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* run the review workflows on claude-code-action with Anthropic WIF ([#19](https://github.com/panicboat/.github/issues/19))
+
+### Features
+
+* run the review workflows on claude-code-action with Anthropic WIF ([#19](https://github.com/panicboat/.github/issues/19)) ([99b55bb](https://github.com/panicboat/.github/commit/99b55bb63e680058fa11ae2a94e6b4c2afada285))
+
 ## [2.0.0](https://github.com/panicboat/.github/compare/v1.0.0...v2.0.0) (2026-10-25)
 
 
