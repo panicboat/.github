@@ -1,5 +1,5 @@
 # Posts the kustomize diff of one kustomization directory as a pull request comment.
-name: 'Internal - Kustomize Diff'
+name: 'Internal - Kustomize Builder'
 
 on:
   workflow_call:

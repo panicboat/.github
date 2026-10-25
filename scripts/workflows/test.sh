@@ -33,12 +33,12 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
-test_kustomize_diff_checks_out_head_ref_only_for_helmfile() {
+test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
-    local kustomize_diff="${workflows_dir}/internal--kustomize-diff.yaml"
+    local kustomize_builder="${workflows_dir}/internal--kustomize-builder.yaml"
     assert_eq '${{ github.head_ref }}' "$(yq '.jobs["deploy-helmfile"].with.ref' "${resolver}")"
     assert_eq 'null' "$(yq '.jobs["deploy-kustomize"].with.ref' "${resolver}")"
-    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout") | .with.ref' "${kustomize_diff}")"
+    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout") | .with.ref' "${kustomize_builder}")"
 }
 
 test_nested_test_workflow_uses_dollar_slash() {
