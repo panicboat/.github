@@ -97,6 +97,15 @@ test_renovate_review_allows_only_read_tools() {
         "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
 }
 
+test_gemini_steps_record_tool_calls() {
+    local wf job
+    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
+        wf="${workflows_dir}/${pair%%:*}"
+        job="${pair##*:}"
+        assert_eq "true|local|.gemini/telemetry.log|true" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .env | [.GEMINI_TELEMETRY_ENABLED, .GEMINI_TELEMETRY_TARGET, .GEMINI_TELEMETRY_OUTFILE, .GEMINI_TELEMETRY_LOG_PROMPTS] | join(\"|\")" "${wf}")"
+    done
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e

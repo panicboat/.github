@@ -151,6 +151,11 @@ jobs:
           # The sandbox hides gh and git from the allowed shell commands; tools.core already limits what runs.
           GEMINI_SANDBOX: 'false'
           GH_TOKEN: ${{ github.token }}
+          # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
+          GEMINI_TELEMETRY_ENABLED: 'true'
+          GEMINI_TELEMETRY_TARGET: 'local'
+          GEMINI_TELEMETRY_OUTFILE: '.gemini/telemetry.log'
+          GEMINI_TELEMETRY_LOG_PROMPTS: 'true'
         with:
           gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'
           gcp_project_id: 'panicboat-platform-github'
