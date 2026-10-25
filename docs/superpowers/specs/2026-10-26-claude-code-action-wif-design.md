@@ -99,7 +99,7 @@ Claude Code の permissions の仕組み（VERIFIED：[Configure permissions](ht
 ### Cost
 
 - ユーザーが Console で Default workspace に月 20 USD の spend limit を付ける。上限に達すると API が止まり、docs-sync-check は「判定できませんでした」になる（`docs-check-approved` ラベルで通せる）
-- **Claude の判断**: `--max-turns` で 1 回あたりの上限を付ける。値は試走の実績（turn 数）の数倍にする
+- **Claude の判断**: `--max-budget-usd` で 1 回あたりの費用に上限を付ける（docs-sync-check は 0.5 USD、renovate-major-review は 5 USD）。Claude Code の CLI がこの flag を持つ（VERIFIED：`claude --help`）。値は試走の実績を見て見直す
 
 ### Prompts
 
