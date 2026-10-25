@@ -86,14 +86,14 @@
 | `WebFetch`（renovate だけ） | `web_fetch` |
 | `Bash(<command>:*)` | `run_shell_command(<command>)` |
 
-- docs-sync-check の command: `gh pr view`、`gh pr diff`、`git diff`、`git log`、`git show`
-- renovate-major-review の command: 上に加えて `gh api`、`helm repo add`、`helm repo update`、`helm pull`、`helm show`
+- docs-sync-check の command: `git diff`、`git log`、`git show`
+- renovate-major-review の command: 上に加えて `helm repo add`、`helm repo update`、`helm pull`、`helm show`
 - MCP server は使わない
-- **Claude の判断**: `gh` には job の `github.token` を `GH_TOKEN` で渡し、`security.environmentVariableRedaction.allowed` に `GH_TOKEN` を入れる（Gemini CLI 0.63.0 が読む設定名。新しい版の docs にある `security.allowedEnvironmentVariables` は読まれない）
-  - Gemini CLI は名前に `TOKEN` などを含む環境変数を、ツールの実行時に既定で隠すため（gemini-cli `docs/reference/configuration.md` の Environment variable redaction）
-  - token の権限は今と同じく job の `permissions`（`contents: read`、`pull-requests: read`）だけ
-- **Claude の判断**: `run_shell_command(gh api)` は今の `Bash(gh api:*)` と同じく前方一致で許し、書き込みは token の権限で防ぐ
-  - 前方一致では `-X POST` などを止められないが、今の Claude の設定も同じで、token が読み取りだけなので書き込みは失敗する
+- **モデルには GitHub の token を渡さず、`gh` も許さない**（ユーザー決定、試走で判明）
+  - Gemini CLI 0.63.0 は、値が GitHub の token の形をした環境変数を、許可リストより先に判定して必ず隠す。GitHub Actions の中では、許可していない環境変数もすべて隠す（VERIFIED：0.63.0 の `sanitizeEnvironment` と `shouldRedactEnvironmentVariable`）
+  - MCP server の `env` の `${...}` も、隠したあとの環境変数から展開されるので、GitHub MCP server にも token を渡せない（REASONED：同じく 0.63.0 の stdio transport の作り方）
+  - PR の情報（`gh pr view --json` と `gh pr diff`）は、Gemini を動かす前の step で `.review-context/pull-request.json` と `.review-context/diff.patch` に書き出し、モデルは `read_file` で読む
+  - renovate-major-review の上流の release note は、`web_fetch` で GitHub の release のページや `raw.githubusercontent.com` のファイルを読む（public なので認証は要らない）
 - **Claude の判断**: `GEMINI_SANDBOX=false` を設定し、sandbox を使わない
   - Gemini CLI は `--yolo` のとき sandbox を既定で有効にする。sandbox の中では `gh`・`git`・`helm` と環境変数・ネットワークの扱いが変わる
   - runner は job ごとに捨てられ、使えるツールは `tools.core` で絞っているため、sandbox で上乗せされる隔離は小さい

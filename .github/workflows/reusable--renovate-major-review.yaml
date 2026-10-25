@@ -80,15 +80,26 @@ jobs:
         with:
           aqua_version: v2.65.2
 
+      - name: Fetch pull request
+        id: fetch-pull-request
+        # Gemini CLI redacts GitHub tokens from its shell tool, so the pull request is handed over as files instead of gh calls.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .review-context
+          gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files,headRefName > .review-context/pull-request.json
+          gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
+
       - name: Review with Gemini
         id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         env:
           # The job only runs for renovate[bot] pull requests, whose content this repository's Renovate writes.
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # The sandbox hides gh, git, and helm from the allowed shell commands; tools.core already limits what runs.
+          # The sandbox hides git and helm from the allowed shell commands; tools.core already limits what runs.
           GEMINI_SANDBOX: 'false'
-          GH_TOKEN: ${{ github.token }}
           # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
           GEMINI_TELEMETRY_ENABLED: 'true'
           GEMINI_TELEMETRY_TARGET: 'local'
@@ -113,9 +124,6 @@ jobs:
                   "glob",
                   "grep_search",
                   "web_fetch",
-                  "run_shell_command(gh pr view)",
-                  "run_shell_command(gh pr diff)",
-                  "run_shell_command(gh api)",
                   "run_shell_command(git diff)",
                   "run_shell_command(git log)",
                   "run_shell_command(git show)",
@@ -124,11 +132,6 @@ jobs:
                   "run_shell_command(helm pull)",
                   "run_shell_command(helm show)"
                 ]
-              },
-              "security": {
-                "environmentVariableRedaction": {
-                  "allowed": ["GH_TOKEN"]
-                }
               }
             }
 

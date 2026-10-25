@@ -142,15 +142,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Fetch pull request
+        id: fetch-pull-request
+        # Gemini CLI redacts GitHub tokens from its shell tool, so the pull request is handed over as files instead of gh calls.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .review-context
+          gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files > .review-context/pull-request.json
+          gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
+
       - name: Judge with Gemini
         id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         env:
           # Only repository collaborators reach this job, since fork pull requests are skipped in scope.
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # The sandbox hides gh and git from the allowed shell commands; tools.core already limits what runs.
+          # The sandbox hides git from the allowed shell commands; tools.core already limits what runs.
           GEMINI_SANDBOX: 'false'
-          GH_TOKEN: ${{ github.token }}
           # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
           GEMINI_TELEMETRY_ENABLED: 'true'
           GEMINI_TELEMETRY_TARGET: 'local'
@@ -174,17 +185,10 @@ jobs:
                   "read_file",
                   "glob",
                   "grep_search",
-                  "run_shell_command(gh pr view)",
-                  "run_shell_command(gh pr diff)",
                   "run_shell_command(git diff)",
                   "run_shell_command(git log)",
                   "run_shell_command(git show)"
                 ]
-              },
-              "security": {
-                "environmentVariableRedaction": {
-                  "allowed": ["GH_TOKEN"]
-                }
               }
             }
 
