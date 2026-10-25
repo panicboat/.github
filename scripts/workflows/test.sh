@@ -133,7 +133,10 @@ test_renovate_review_accepts_the_renovate_bot() {
 }
 
 test_renovate_review_scrubs_secrets_from_bash() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
     assert_eq "1" "$(yq '.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+    assert_eq "install-bubblewrap claude" "$(yq '.jobs.review.steps[] | select(.id == "install-bubblewrap" or .id == "claude") | .id' "${wf}" | tr '\n' ' ' | sed 's/ $//')"
+    yq '.jobs.review.steps[] | select(.id == "install-bubblewrap") | .run' "${wf}" | grep -q 'apt-get install -y --no-install-recommends bubblewrap'
 }
 
 

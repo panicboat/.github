@@ -92,6 +92,17 @@ jobs:
           gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files,headRefName > .review-context/pull-request.json
           gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
 
+      - name: Install bubblewrap
+        id: install-bubblewrap
+        # The secret scrub needs bubblewrap, which the action installs only when allowed_non_write_users is set.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          # Ubuntu 24.04 blocks the unprivileged user namespaces bubblewrap needs.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Review with Claude
         id: claude
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
