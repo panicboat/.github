@@ -67,6 +67,23 @@ test_workflows_carry_matching_file_and_name_prefix() {
     done
 }
 
+test_docs_sync_judge_uses_gemini_on_vertex() {
+    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
+    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .uses' "${wf}")"
+    assert_eq "gemini-3.5-flash-lite" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
+    assert_eq "" "$(yq '.jobs.judge.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
+}
+
+test_docs_sync_judge_allows_only_read_tools() {
+    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
+    assert_eq '["read_file","glob","grep_search","run_shell_command(gh pr view)","run_shell_command(gh pr diff)","run_shell_command(git diff)","run_shell_command(git log)","run_shell_command(git show)"]' \
+        "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
+}
+
+test_docs_sync_status_does_not_name_a_model() {
+    assert_eq "0" "$(grep -c 'Claude' "${workflows_dir}/reusable--docs-sync-check.yaml" || true)"
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e
