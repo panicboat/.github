@@ -36,7 +36,7 @@ jobs:
       - name: Setup aqua
         uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.64.0
+          aqua_version: v2.65.2
 
       - name: Render manifest diff
         # HEAD is the PR merge commit, so its first parent is the base it merges into.
@@ -78,7 +78,7 @@ jobs:
       - name: Setup aqua
         uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.64.0
+          aqua_version: v2.65.2
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
