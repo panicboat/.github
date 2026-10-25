@@ -16,7 +16,7 @@
 - 認証: `gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'`、`gcp_project_id: 'panicboat-platform-github'`、`gcp_location: 'global'`、`gcp_token_format: ''`、`use_vertex_ai: 'true'`
 - モデル: docs-sync-check は `gemini-3.5-flash-lite`、renovate-major-review は `gemini-3.8-flash`
 - step の env: `GEMINI_CLI_TRUST_WORKSPACE: 'true'`、`GEMINI_SANDBOX: 'false'`、`GH_TOKEN: ${{ github.token }}`
-- settings に `"security": {"allowedEnvironmentVariables": ["GH_TOKEN"]}` を入れる
+- settings に `"security": {"environmentVariableRedaction": {"allowed": ["GH_TOKEN"]}}` を入れる
 - job の `permissions`・`environment`・`timeout-minutes` は今のまま。`id-token: write` は GCP の認証に使う
 - 出力の検証: `body` は 1〜60,000 文字の文字列、docs-sync-check は `passed` が boolean
 - commit は `git commit -s`、`Co-Authored-By` を付けない、message は英語。コメントは 1 行で why を書く（AGENTS.md）

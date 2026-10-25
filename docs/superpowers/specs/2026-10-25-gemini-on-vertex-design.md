@@ -89,7 +89,7 @@
 - docs-sync-check の command: `gh pr view`、`gh pr diff`、`git diff`、`git log`、`git show`
 - renovate-major-review の command: 上に加えて `gh api`、`helm repo add`、`helm repo update`、`helm pull`、`helm show`
 - MCP server は使わない
-- **Claude の判断**: `gh` には job の `github.token` を `GH_TOKEN` で渡し、`security.allowedEnvironmentVariables` に `GH_TOKEN` を入れる
+- **Claude の判断**: `gh` には job の `github.token` を `GH_TOKEN` で渡し、`security.environmentVariableRedaction.allowed` に `GH_TOKEN` を入れる（Gemini CLI 0.63.0 が読む設定名。新しい版の docs にある `security.allowedEnvironmentVariables` は読まれない）
   - Gemini CLI は名前に `TOKEN` などを含む環境変数を、ツールの実行時に既定で隠すため（gemini-cli `docs/reference/configuration.md` の Environment variable redaction）
   - token の権限は今と同じく job の `permissions`（`contents: read`、`pull-requests: read`）だけ
 - **Claude の判断**: `run_shell_command(gh api)` は今の `Bash(gh api:*)` と同じく前方一致で許し、書き込みは token の権限で防ぐ
