@@ -182,7 +182,9 @@ jobs:
                 ]
               },
               "security": {
-                "allowedEnvironmentVariables": ["GH_TOKEN"]
+                "environmentVariableRedaction": {
+                  "allowed": ["GH_TOKEN"]
+                }
               }
             }
 

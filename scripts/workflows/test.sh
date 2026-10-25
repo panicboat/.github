@@ -106,6 +106,15 @@ test_gemini_steps_record_tool_calls() {
     done
 }
 
+test_gemini_steps_pass_gh_token_through_redaction() {
+    local wf job
+    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
+        wf="${workflows_dir}/${pair%%:*}"
+        job="${pair##*:}"
+        assert_eq '["GH_TOKEN"]' "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .with.settings" "${wf}" | jq -c '.security.environmentVariableRedaction.allowed')"
+    done
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e
