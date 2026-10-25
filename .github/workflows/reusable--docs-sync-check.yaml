@@ -1,4 +1,4 @@
-# Judges with Claude whether a pull request keeps the docs in sync and reports the verdict as the Docs Sync Check commit status.
+# Judges with Gemini on Vertex AI whether a pull request keeps the docs in sync and reports the verdict as the Docs Sync Check commit status.
 name: 'Reusable - Docs Sync Check'
 
 on:
@@ -96,7 +96,7 @@ jobs:
             skip-bot)       state=success; description='bot の PR は判定しません' ;;
             skip-unchanged) state=success; description='対象のパスに変更がありません' ;;
             approved)       state=success; description='docs-check-approved ラベルで承認されています' ;;
-            judge)          state=pending; description='Claude が判定しています' ;;
+            judge)          state=pending; description='AI が判定しています' ;;
             *) echo "unknown mode: $MODE" >&2; exit 1 ;;
           esac
           gh api "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
@@ -132,8 +132,8 @@ jobs:
       pull-requests: read
       id-token: write
     outputs:
-      passed: ${{ steps.claude.outputs.structured_output && fromJSON(steps.claude.outputs.structured_output).passed || '' }}
-      body: ${{ steps.claude.outputs.structured_output && fromJSON(steps.claude.outputs.structured_output).body || '' }}
+      passed: ${{ steps.parse.outputs.passed }}
+      body: ${{ steps.parse.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -142,37 +142,95 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: arn:aws:iam::559744160976:role/github-oidc-auth-master-github-actions-bedrock-role
-          aws-region: us-east-1
-
-      - name: Judge with Claude
-        id: claude
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+      - name: Fetch pull request
+        id: fetch-pull-request
+        # Gemini CLI redacts GitHub tokens from its shell tool, so the pull request is handed over as files instead of gh calls.
         env:
-          # The Bedrock role only allows Sonnet 4.6, so background tasks must not fall back to Haiku.
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: global.anthropic.claude-sonnet-4-6
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .review-context
+          gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files > .review-context/pull-request.json
+          gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
+
+      - name: Judge with Gemini
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+        env:
+          # Only repository collaborators reach this job, since fork pull requests are skipped in scope.
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          # No shell tool is allowed, so the sandbox would only add a container start to every run.
+          GEMINI_SANDBOX: 'false'
+          # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
+          GEMINI_TELEMETRY_ENABLED: 'true'
+          GEMINI_TELEMETRY_TARGET: 'local'
+          GEMINI_TELEMETRY_OUTFILE: '.gemini/telemetry.log'
+          GEMINI_TELEMETRY_LOG_PROMPTS: 'true'
         with:
-          use_bedrock: 'true'
-          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
-          github_token: ${{ github.token }}
+          gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'
+          gcp_project_id: 'panicboat-platform-github'
+          gcp_location: 'global'
+          gcp_token_format: ''
+          use_vertex_ai: 'true'
+          gemini_cli_version: '0.63.0'
+          gemini_model: 'gemini-3.5-flash-lite'
           prompt: |
             Read `${{ inputs.prompt-path }}` and follow it.
             Pull request number: ${{ github.event.pull_request.number }}
-          claude_args: |
-            --model global.anthropic.claude-sonnet-4-6
-            --json-schema '{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}'
-            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+          settings: |
+            {
+              "tools": {
+                "core": [
+                  "read_file",
+                  "glob",
+                  "grep_search"
+                ]
+              }
+            }
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Parse verdict
+        id: parse
+        env:
+          RESPONSE: ${{ steps.gemini.outputs.summary }}
+        run: |
+          if verdict="$(printf '%s' "$RESPONSE" | bash .shared-workflows/scripts/gemini-output/parse.sh docs-sync)"; then
+            delimiter="EOF_$(openssl rand -hex 16)"
+            echo "passed=$(jq -r '.passed' <<<"$verdict")" >> "$GITHUB_OUTPUT"
+            {
+              echo "body<<${delimiter}"
+              jq -r '.body' <<<"$verdict"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report token usage
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -s gemini-artifacts/stdout.log ] && jq -e '.stats' gemini-artifacts/stdout.log >/dev/null 2>&1; then
+            {
+              echo '### Gemini token usage'
+              echo '```json'
+              jq '.stats.models' gemini-artifacts/stdout.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload execution log
-        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
+        if: ${{ !cancelled() && hashFiles('gemini-artifacts/**') != '' }}
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-sync-check-execution
-          path: ${{ steps.claude.outputs.execution_file }}
+          path: gemini-artifacts/
           retention-days: 7
 
   report:

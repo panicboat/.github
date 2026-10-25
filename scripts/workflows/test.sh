@@ -67,6 +67,71 @@ test_workflows_carry_matching_file_and_name_prefix() {
     done
 }
 
+test_docs_sync_judge_uses_gemini_on_vertex() {
+    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
+    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .uses' "${wf}")"
+    assert_eq "gemini-3.5-flash-lite" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
+    assert_eq "" "$(yq '.jobs.judge.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
+}
+
+test_docs_sync_judge_allows_only_read_tools() {
+    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
+    assert_eq '["read_file","glob","grep_search"]' \
+        "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
+}
+
+test_docs_sync_status_does_not_name_a_model() {
+    assert_eq "0" "$(grep -c 'Claude' "${workflows_dir}/reusable--docs-sync-check.yaml" || true)"
+}
+
+test_renovate_review_uses_gemini_on_vertex() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .uses' "${wf}")"
+    assert_eq "gemini-3.8-flash" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
+    assert_eq "" "$(yq '.jobs.review.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
+}
+
+test_renovate_review_allows_only_read_tools() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq '["read_file","glob","grep_search","web_fetch","run_shell_command(helm repo add)","run_shell_command(helm repo update)","run_shell_command(helm pull)","run_shell_command(helm show)"]' \
+        "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
+}
+
+test_gemini_steps_record_tool_calls() {
+    local wf job
+    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
+        wf="${workflows_dir}/${pair%%:*}"
+        job="${pair##*:}"
+        assert_eq "true|local|.gemini/telemetry.log|true" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .env | [.GEMINI_TELEMETRY_ENABLED, .GEMINI_TELEMETRY_TARGET, .GEMINI_TELEMETRY_OUTFILE, .GEMINI_TELEMETRY_LOG_PROMPTS] | join(\"|\")" "${wf}")"
+    done
+}
+
+test_gemini_steps_get_no_github_token() {
+    local wf job
+    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
+        wf="${workflows_dir}/${pair%%:*}"
+        job="${pair##*:}"
+        assert_eq "" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .env | keys | .[] | select(test(\"TOKEN\"))" "${wf}")"
+        assert_eq "null" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .with.settings" "${wf}" | jq -c '.security')"
+    done
+}
+
+test_review_jobs_fetch_the_pull_request_before_gemini() {
+    local wf job
+    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
+        wf="${workflows_dir}/${pair%%:*}"
+        job="${pair##*:}"
+        assert_eq "fetch-pull-request gemini" "$(yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\" or .id == \"gemini\") | .id" "${wf}" | tr '\n' ' ' | sed 's/ $//')"
+        yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/pull-request.json'
+        yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/diff.patch'
+    done
+}
+
+test_renovate_review_reads_gitignored_chart_files() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq "false" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.context.fileFiltering.respectGitIgnore')"
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e
