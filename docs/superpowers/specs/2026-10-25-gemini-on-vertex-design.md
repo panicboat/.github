@@ -86,8 +86,10 @@
 | `WebFetch`（renovate だけ） | `web_fetch` |
 | `Bash(<command>:*)` | `run_shell_command(<command>)` |
 
-- docs-sync-check の command: `git diff`、`git log`、`git show`
-- renovate-major-review の command: 上に加えて `helm repo add`、`helm repo update`、`helm pull`、`helm show`
+- docs-sync-check の command: なし（PR の情報はファイルで渡すので、シェルは要らない）
+- renovate-major-review の command: `helm repo add`、`helm repo update`、`helm pull`、`helm show`
+  - `git` は許さない。`git diff /dev/null <file>` で `read_file` が拒否する認証ファイルを読めたり、`--output` で任意のファイルに書けたりするため
+- renovate-major-review は `context.fileFiltering.respectGitIgnore` を `false` にする。platform の `.gitignore` の `charts/` が、展開した chart の sub-chart を隠すため
 - MCP server は使わない
 - **モデルには GitHub の token を渡さず、`gh` も許さない**（ユーザー決定、試走で判明）
   - Gemini CLI 0.63.0 は、値が GitHub の token の形をした環境変数を、許可リストより先に判定して必ず隠す。GitHub Actions の中では、許可していない環境変数もすべて隠す（VERIFIED：0.63.0 の `sanitizeEnvironment` と `shouldRedactEnvironmentVariable`）

@@ -96,9 +96,9 @@ jobs:
         id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         env:
-          # The job only runs for renovate[bot] pull requests, whose content this repository's Renovate writes.
+          # Only renovate[bot] branches of this repository reach this job; upstream text in the pull request is left to the prompt as data.
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # The sandbox hides git and helm from the allowed shell commands; tools.core already limits what runs.
+          # The sandbox image has no helm, and tools.core leaves only the helm subcommands to the shell.
           GEMINI_SANDBOX: 'false'
           # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
           GEMINI_TELEMETRY_ENABLED: 'true'
@@ -118,15 +118,17 @@ jobs:
             Pull request number: ${{ github.event.pull_request.number }}
           settings: |
             {
+              "context": {
+                "fileFiltering": {
+                  "respectGitIgnore": false
+                }
+              },
               "tools": {
                 "core": [
                   "read_file",
                   "glob",
                   "grep_search",
                   "web_fetch",
-                  "run_shell_command(git diff)",
-                  "run_shell_command(git log)",
-                  "run_shell_command(git show)",
                   "run_shell_command(helm repo add)",
                   "run_shell_command(helm repo update)",
                   "run_shell_command(helm pull)",

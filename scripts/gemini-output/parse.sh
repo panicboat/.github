@@ -16,7 +16,7 @@ if [[ "$(head -n 1 <<<"${response}")" =~ ^\`\`\`(json)?$ ]] && [ "$(tail -n 1 <<
   response="$(sed -e '1d' -e '$d' <<<"${response}")"
 fi
 
-if ! parsed="$(jq -ce "${filter}" <<<"${response}" 2>/dev/null)" || [ -z "${parsed}" ]; then
+if ! parsed="$(jq -cse "if length == 1 then .[0] | ${filter} else empty end" <<<"${response}" 2>/dev/null)" || [ -z "${parsed}" ]; then
   echo "::warning::the model's final answer is not the expected JSON object" >&2
   exit 1
 fi

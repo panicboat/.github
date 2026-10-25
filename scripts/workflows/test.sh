@@ -76,7 +76,7 @@ test_docs_sync_judge_uses_gemini_on_vertex() {
 
 test_docs_sync_judge_allows_only_read_tools() {
     local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
-    assert_eq '["read_file","glob","grep_search","run_shell_command(git diff)","run_shell_command(git log)","run_shell_command(git show)"]' \
+    assert_eq '["read_file","glob","grep_search"]' \
         "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
 }
 
@@ -93,7 +93,7 @@ test_renovate_review_uses_gemini_on_vertex() {
 
 test_renovate_review_allows_only_read_tools() {
     local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
-    assert_eq '["read_file","glob","grep_search","web_fetch","run_shell_command(git diff)","run_shell_command(git log)","run_shell_command(git show)","run_shell_command(helm repo add)","run_shell_command(helm repo update)","run_shell_command(helm pull)","run_shell_command(helm show)"]' \
+    assert_eq '["read_file","glob","grep_search","web_fetch","run_shell_command(helm repo add)","run_shell_command(helm repo update)","run_shell_command(helm pull)","run_shell_command(helm show)"]' \
         "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
 }
 
@@ -125,6 +125,11 @@ test_review_jobs_fetch_the_pull_request_before_gemini() {
         yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/pull-request.json'
         yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/diff.patch'
     done
+}
+
+test_renovate_review_reads_gitignored_chart_files() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq "false" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.context.fileFiltering.respectGitIgnore')"
 }
 
 failed=0

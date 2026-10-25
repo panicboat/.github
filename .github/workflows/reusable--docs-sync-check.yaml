@@ -160,7 +160,7 @@ jobs:
         env:
           # Only repository collaborators reach this job, since fork pull requests are skipped in scope.
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # The sandbox hides git from the allowed shell commands; tools.core already limits what runs.
+          # No shell tool is allowed, so the sandbox would only add a container start to every run.
           GEMINI_SANDBOX: 'false'
           # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
           GEMINI_TELEMETRY_ENABLED: 'true'
@@ -184,10 +184,7 @@ jobs:
                 "core": [
                   "read_file",
                   "glob",
-                  "grep_search",
-                  "run_shell_command(git diff)",
-                  "run_shell_command(git log)",
-                  "run_shell_command(git show)"
+                  "grep_search"
                 ]
               }
             }
