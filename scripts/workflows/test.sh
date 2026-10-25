@@ -67,70 +67,62 @@ test_workflows_carry_matching_file_and_name_prefix() {
     done
 }
 
-test_docs_sync_judge_uses_gemini_on_vertex() {
-    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
-    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .uses' "${wf}")"
-    assert_eq "gemini-3.5-flash-lite" "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
-    assert_eq "" "$(yq '.jobs.judge.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
-}
-
-test_docs_sync_judge_allows_only_read_tools() {
-    local wf="${workflows_dir}/reusable--docs-sync-check.yaml"
-    assert_eq '["read_file","glob","grep_search"]' \
-        "$(yq '.jobs.judge.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
-}
-
 test_docs_sync_status_does_not_name_a_model() {
-    assert_eq "0" "$(grep -c 'Claude' "${workflows_dir}/reusable--docs-sync-check.yaml" || true)"
+    assert_eq "1" "$(grep -c "state=pending; description='AI が判定しています'" "${workflows_dir}/reusable--docs-sync-check.yaml")"
 }
 
-test_renovate_review_uses_gemini_on_vertex() {
-    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
-    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .uses' "${wf}")"
-    assert_eq "gemini-3.8-flash" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
-    assert_eq "" "$(yq '.jobs.review.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
-}
-
-test_renovate_review_allows_only_read_tools() {
-    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
-    assert_eq '["read_file","glob","grep_search","web_fetch","run_shell_command(helm repo add)","run_shell_command(helm repo update)","run_shell_command(helm pull)","run_shell_command(helm show)"]' \
-        "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
-}
-
-test_gemini_steps_record_tool_calls() {
+test_review_jobs_fetch_the_pull_request_before_the_model() {
     local wf job
     for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
         wf="${workflows_dir}/${pair%%:*}"
         job="${pair##*:}"
-        assert_eq "true|local|.gemini/telemetry.log|true" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .env | [.GEMINI_TELEMETRY_ENABLED, .GEMINI_TELEMETRY_TARGET, .GEMINI_TELEMETRY_OUTFILE, .GEMINI_TELEMETRY_LOG_PROMPTS] | join(\"|\")" "${wf}")"
-    done
-}
-
-test_gemini_steps_get_no_github_token() {
-    local wf job
-    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
-        wf="${workflows_dir}/${pair%%:*}"
-        job="${pair##*:}"
-        assert_eq "" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .env | keys | .[] | select(test(\"TOKEN\"))" "${wf}")"
-        assert_eq "null" "$(yq ".jobs.${job}.steps[] | select(.id == \"gemini\") | .with.settings" "${wf}" | jq -c '.security')"
-    done
-}
-
-test_review_jobs_fetch_the_pull_request_before_gemini() {
-    local wf job
-    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
-        wf="${workflows_dir}/${pair%%:*}"
-        job="${pair##*:}"
-        assert_eq "fetch-pull-request gemini" "$(yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\" or .id == \"gemini\") | .id" "${wf}" | tr '\n' ' ' | sed 's/ $//')"
+        assert_eq "fetch-pull-request claude" "$(yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\" or .id == \"claude\") | .id" "${wf}" | tr '\n' ' ' | sed 's/ $//')"
         yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/pull-request.json'
         yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/diff.patch'
     done
 }
 
-test_renovate_review_reads_gitignored_chart_files() {
-    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
-    assert_eq "false" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.context.fileFiltering.respectGitIgnore')"
+claude_step() {
+    yq ".jobs.$2.steps[] | select(.id == \"claude\")" "${workflows_dir}/$1"
 }
+
+assert_claude_step_uses_wif() {
+    local step="$1"
+    assert_eq "anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13" "$(yq '.uses' <<<"${step}")"
+    assert_eq "fdrl_01EFTG7Y8vWedXu5dyKHk9VP|3e6cc666-1654-4da0-9d46-3abb52bc7288|svac_01XpqeHTNpHPf7zZSQXgck3S|wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv" \
+        "$(yq '.with | [.anthropic_federation_rule_id, .anthropic_organization_id, .anthropic_service_account_id, .anthropic_workspace_id] | join("|")' <<<"${step}")"
+    assert_eq "null" "$(yq '.with.anthropic_api_key' <<<"${step}")"
+    assert_eq "null" "$(yq '.with.claude_code_oauth_token' <<<"${step}")"
+    local args
+    args="$(yq '.with.claude_args' <<<"${step}")"
+    grep -q 'blockReadsOutsideWorkingDirectories' <<<"${args}"
+    grep -qF 'Read(//home/runner/work/_temp/**)' <<<"${args}"
+    grep -qF 'Read(./.git/**)' <<<"${args}"
+}
+
+test_docs_sync_judge_runs_claude_code_action() {
+    local wf="${workflows_dir}/reusable--docs-sync-check.yaml" step args
+    step="$(claude_step reusable--docs-sync-check.yaml judge)"
+    assert_claude_step_uses_wif "${step}"
+    args="$(yq '.with.claude_args' <<<"${step}")"
+    grep -qF -- '--model claude-haiku-5-5' <<<"${args}"
+    grep -qF -- '--max-budget-usd 0.5' <<<"${args}"
+    ! grep -qF -- '--allowedTools' <<<"${args}"
+    grep -qE -- '--disallowedTools "[^"]*Bash[,"]' <<<"${args}"
+    assert_eq "" "$(yq '.jobs.judge.steps[] | select(.uses == "*run-gemini-cli*" or .uses == "*configure-aws-credentials*") | .name' "${wf}")"
+}
+
+test_renovate_review_runs_claude_code_action() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml" step args
+    step="$(claude_step reusable--renovate-major-review.yaml review)"
+    assert_claude_step_uses_wif "${step}"
+    args="$(yq '.with.claude_args' <<<"${step}")"
+    grep -qF -- '--model claude-sonnet-5-5' <<<"${args}"
+    grep -qF -- '--max-budget-usd 5' <<<"${args}"
+    grep -qF -- '--allowedTools "WebFetch,Bash(helm repo add:*),Bash(helm repo update:*),Bash(helm pull:*),Bash(helm show:*)"' <<<"${args}"
+    assert_eq "" "$(yq '.jobs.review.steps[] | select(.uses == "*run-gemini-cli*" or .uses == "*configure-aws-credentials*") | .name' "${wf}")"
+}
+
 
 failed=0
 for test_name in $(compgen -A function test_); do

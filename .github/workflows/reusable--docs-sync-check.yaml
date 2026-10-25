@@ -1,4 +1,4 @@
-# Judges with Gemini on Vertex AI whether a pull request keeps the docs in sync and reports the verdict as the Docs Sync Check commit status.
+# Judges with Claude whether a pull request keeps the docs in sync and reports the verdict as the Docs Sync Check commit status.
 name: 'Reusable - Docs Sync Check'
 
 on:
@@ -132,8 +132,8 @@ jobs:
       pull-requests: read
       id-token: write
     outputs:
-      passed: ${{ steps.parse.outputs.passed }}
-      body: ${{ steps.parse.outputs.body }}
+      passed: ${{ steps.check.outputs.passed }}
+      body: ${{ steps.check.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,7 +144,7 @@ jobs:
 
       - name: Fetch pull request
         id: fetch-pull-request
-        # Gemini CLI redacts GitHub tokens from its shell tool, so the pull request is handed over as files instead of gh calls.
+        # The model gets no git or gh, since git diff and gh can read files outside the working directory.
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -154,40 +154,26 @@ jobs:
           gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files > .review-context/pull-request.json
           gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
 
-      - name: Judge with Gemini
-        id: gemini
-        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
-        env:
-          # Only repository collaborators reach this job, since fork pull requests are skipped in scope.
-          GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # No shell tool is allowed, so the sandbox would only add a container start to every run.
-          GEMINI_SANDBOX: 'false'
-          # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
-          GEMINI_TELEMETRY_ENABLED: 'true'
-          GEMINI_TELEMETRY_TARGET: 'local'
-          GEMINI_TELEMETRY_OUTFILE: '.gemini/telemetry.log'
-          GEMINI_TELEMETRY_LOG_PROMPTS: 'true'
+      - name: Judge with Claude
+        id: claude
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
-          gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'
-          gcp_project_id: 'panicboat-platform-github'
-          gcp_location: 'global'
-          gcp_token_format: ''
-          use_vertex_ai: 'true'
-          gemini_cli_version: '0.63.0'
-          gemini_model: 'gemini-3.5-flash-lite'
+          anthropic_federation_rule_id: 'fdrl_01EFTG7Y8vWedXu5dyKHk9VP'
+          anthropic_organization_id: '3e6cc666-1654-4da0-9d46-3abb52bc7288'
+          anthropic_service_account_id: 'svac_01XpqeHTNpHPf7zZSQXgck3S'
+          anthropic_workspace_id: 'wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv'
+          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
+          github_token: ${{ github.token }}
           prompt: |
             Read `${{ inputs.prompt-path }}` and follow it.
             Pull request number: ${{ github.event.pull_request.number }}
-          settings: |
-            {
-              "tools": {
-                "core": [
-                  "read_file",
-                  "glob",
-                  "grep_search"
-                ]
-              }
-            }
+          # _temp holds the OIDC and Anthropic tokens and .git/config holds the GitHub token, so neither is readable.
+          claude_args: |
+            --model claude-haiku-5-5
+            --max-budget-usd 0.5
+            --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
+            --json-schema '{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}'
+            --disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Bash,WebFetch,Read(//home/runner/work/_temp/**),Read(./.git/**)"
 
       - name: Checkout shared workflows
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,12 +183,13 @@ jobs:
           path: .shared-workflows
           persist-credentials: false
 
-      - name: Parse verdict
-        id: parse
+      - name: Check verdict
+        id: check
         env:
-          RESPONSE: ${{ steps.gemini.outputs.summary }}
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
-          if verdict="$(printf '%s' "$RESPONSE" | bash .shared-workflows/scripts/gemini-output/parse.sh docs-sync)"; then
+          if verdict="$(bash .shared-workflows/scripts/review-output/check.sh docs-sync)"; then
             delimiter="EOF_$(openssl rand -hex 16)"
             echo "passed=$(jq -r '.passed' <<<"$verdict")" >> "$GITHUB_OUTPUT"
             {
@@ -212,25 +199,27 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Report token usage
-        if: ${{ !cancelled() }}
+      - name: Report cost
+        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
-          if [ -s gemini-artifacts/stdout.log ] && jq -e '.stats' gemini-artifacts/stdout.log >/dev/null 2>&1; then
+          if result="$(jq -ce '[.[] | select(.type == "result")] | last | {total_cost_usd, num_turns}' "$EXECUTION_FILE" 2>/dev/null)"; then
             {
-              echo '### Gemini token usage'
+              echo '### Claude cost'
               echo '```json'
-              jq '.stats.models' gemini-artifacts/stdout.log
+              echo "$result"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload execution log
-        if: ${{ !cancelled() && hashFiles('gemini-artifacts/**') != '' }}
+        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-sync-check-execution
-          path: gemini-artifacts/
+          path: ${{ steps.claude.outputs.execution_file }}
           retention-days: 7
 
   report:
