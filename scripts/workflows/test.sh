@@ -84,6 +84,19 @@ test_docs_sync_status_does_not_name_a_model() {
     assert_eq "0" "$(grep -c 'Claude' "${workflows_dir}/reusable--docs-sync-check.yaml" || true)"
 }
 
+test_renovate_review_uses_gemini_on_vertex() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq "google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .uses' "${wf}")"
+    assert_eq "gemini-3.8-flash" "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.gemini_model' "${wf}")"
+    assert_eq "" "$(yq '.jobs.review.steps[] | select(.with.role-to-assume) | .name' "${wf}")"
+}
+
+test_renovate_review_allows_only_read_tools() {
+    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq '["read_file","glob","grep_search","web_fetch","run_shell_command(gh pr view)","run_shell_command(gh pr diff)","run_shell_command(gh api)","run_shell_command(git diff)","run_shell_command(git log)","run_shell_command(git show)","run_shell_command(helm repo add)","run_shell_command(helm repo update)","run_shell_command(helm pull)","run_shell_command(helm show)"]' \
+        "$(yq '.jobs.review.steps[] | select(.id == "gemini") | .with.settings' "${wf}" | jq -c '.tools.core')"
+}
+
 failed=0
 for test_name in $(compgen -A function test_); do
     set +e

@@ -1,4 +1,4 @@
-# Reviews Renovate major-update pull requests with Claude on Bedrock and posts the review.
+# Reviews Renovate major-update pull requests with Gemini on Vertex AI and posts the review.
 name: 'Reusable - Renovate Major Review'
 
 on:
@@ -61,7 +61,7 @@ jobs:
       pull-requests: read
       id-token: write
     outputs:
-      body: ${{ steps.claude.outputs.structured_output && fromJSON(steps.claude.outputs.structured_output).body || '' }}
+      body: ${{ steps.parse.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,30 +80,93 @@ jobs:
         with:
           aqua_version: v2.65.2
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: arn:aws:iam::559744160976:role/github-oidc-auth-master-github-actions-bedrock-role
-          aws-region: us-east-1
-
-      - name: Review with Claude
-        id: claude
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+      - name: Review with Gemini
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         env:
-          # The Bedrock role only allows Sonnet 4.6, so background tasks must not fall back to Haiku.
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: global.anthropic.claude-sonnet-4-6
+          # The job only runs for renovate[bot] pull requests, whose content this repository's Renovate writes.
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          # The sandbox hides gh, git, and helm from the allowed shell commands; tools.core already limits what runs.
+          GEMINI_SANDBOX: 'false'
+          GH_TOKEN: ${{ github.token }}
         with:
-          use_bedrock: 'true'
-          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
-          github_token: ${{ github.token }}
-          allowed_bots: renovate
+          gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'
+          gcp_project_id: 'panicboat-platform-github'
+          gcp_location: 'global'
+          gcp_token_format: ''
+          use_vertex_ai: 'true'
+          gemini_cli_version: '0.63.0'
+          gemini_model: 'gemini-3.8-flash'
           prompt: |
             Read `${{ inputs.prompt-path }}` and follow it.
             Pull request number: ${{ github.event.pull_request.number }}
-          claude_args: |
-            --model global.anthropic.claude-sonnet-4-6
-            --json-schema '{"type":"object","properties":{"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["body"]}'
-            --allowedTools "Read,Glob,Grep,WebFetch,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(helm repo add:*),Bash(helm repo update:*),Bash(helm pull:*),Bash(helm show:*)"
+          settings: |
+            {
+              "tools": {
+                "core": [
+                  "read_file",
+                  "glob",
+                  "grep_search",
+                  "web_fetch",
+                  "run_shell_command(gh pr view)",
+                  "run_shell_command(gh pr diff)",
+                  "run_shell_command(gh api)",
+                  "run_shell_command(git diff)",
+                  "run_shell_command(git log)",
+                  "run_shell_command(git show)",
+                  "run_shell_command(helm repo add)",
+                  "run_shell_command(helm repo update)",
+                  "run_shell_command(helm pull)",
+                  "run_shell_command(helm show)"
+                ]
+              },
+              "security": {
+                "allowedEnvironmentVariables": ["GH_TOKEN"]
+              }
+            }
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Parse review
+        id: parse
+        env:
+          RESPONSE: ${{ steps.gemini.outputs.summary }}
+        run: |
+          if review="$(printf '%s' "$RESPONSE" | bash .shared-workflows/scripts/gemini-output/parse.sh review)"; then
+            delimiter="EOF_$(openssl rand -hex 16)"
+            {
+              echo "body<<${delimiter}"
+              jq -r '.body' <<<"$review"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report token usage
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -s gemini-artifacts/stdout.log ] && jq -e '.stats' gemini-artifacts/stdout.log >/dev/null 2>&1; then
+            {
+              echo '### Gemini token usage'
+              echo '```json'
+              jq '.stats.models' gemini-artifacts/stdout.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload execution log
+        if: ${{ !cancelled() && hashFiles('gemini-artifacts/**') != '' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: renovate-major-review-execution
+          path: gemini-artifacts/
+          retention-days: 7
 
   post:
     name: 'Post Review'
