@@ -1,5 +1,5 @@
 # Runs release-please for this repository to open release pull requests and publish releases.
-name: 'Release - Please'
+name: 'Self - Release - Please'
 
 on:
   push:

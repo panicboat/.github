@@ -1,5 +1,5 @@
 # Waits for every other workflow on a pull request so that one required check gates the merge.
-name: 'CI Gatekeeper'
+name: 'Self - CI Gatekeeper'
 
 on:
   pull_request:
