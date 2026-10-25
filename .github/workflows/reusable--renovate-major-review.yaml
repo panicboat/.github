@@ -95,6 +95,9 @@ jobs:
       - name: Review with Claude
         id: claude
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        env:
+          # The action puts the GitHub token in the env, which Bash could read and WebFetch could send out.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
           anthropic_federation_rule_id: 'fdrl_01EFTG7Y8vWedXu5dyKHk9VP'
           anthropic_organization_id: '3e6cc666-1654-4da0-9d46-3abb52bc7288'
@@ -102,12 +105,15 @@ jobs:
           anthropic_workspace_id: 'wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv'
           # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
           github_token: ${{ github.token }}
+          # Renovate adds the review label itself, and the action rejects bot actors not listed here.
+          allowed_bots: renovate
           prompt: |
             Read `${{ inputs.prompt-path }}` and follow it.
             Pull request number: ${{ github.event.pull_request.number }}
           # _temp holds the OIDC and Anthropic tokens and .git/config holds the GitHub token, so neither is readable.
           claude_args: |
             --model claude-sonnet-5-5
+            --tools "Read,Glob,Grep,Bash,WebFetch"
             --max-budget-usd 5
             --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
             --json-schema '{"type":"object","properties":{"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["body"]}'

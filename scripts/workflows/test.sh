@@ -123,6 +123,19 @@ test_renovate_review_runs_claude_code_action() {
     assert_eq "" "$(yq '.jobs.review.steps[] | select(.uses == "*run-gemini-cli*" or .uses == "*configure-aws-credentials*") | .name' "${wf}")"
 }
 
+test_review_jobs_enable_only_the_listed_tools() {
+    grep -qF -- '--tools "Read,Glob,Grep"' <<<"$(yq '.with.claude_args' <<<"$(claude_step reusable--docs-sync-check.yaml judge)")"
+    grep -qF -- '--tools "Read,Glob,Grep,Bash,WebFetch"' <<<"$(yq '.with.claude_args' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+}
+
+test_renovate_review_accepts_the_renovate_bot() {
+    assert_eq "renovate" "$(yq '.with.allowed_bots' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+}
+
+test_renovate_review_scrubs_secrets_from_bash() {
+    assert_eq "1" "$(yq '.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+}
+
 
 failed=0
 for test_name in $(compgen -A function test_); do

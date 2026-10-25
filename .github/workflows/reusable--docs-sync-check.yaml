@@ -170,6 +170,7 @@ jobs:
           # _temp holds the OIDC and Anthropic tokens and .git/config holds the GitHub token, so neither is readable.
           claude_args: |
             --model claude-haiku-5-5
+            --tools "Read,Glob,Grep"
             --max-budget-usd 0.5
             --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
             --json-schema '{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}'

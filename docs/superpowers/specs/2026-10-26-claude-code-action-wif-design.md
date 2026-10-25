@@ -68,7 +68,8 @@
 
 - action: `anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262`（v1.0.0 の共通 workflow と同じ固定。以後は Renovate が更新する）
 - 入力: `anthropic_federation_rule_id`・`anthropic_organization_id`・`anthropic_service_account_id`・`anthropic_workspace_id`、`github_token: ${{ github.token }}`（読み取りだけ）、`prompt`（今の 2 行）、`claude_args`
-- `claude_args`: `--model`、`--json-schema`（v1.0.0 と同じ schema）、`--allowedTools`
+- `claude_args`: `--model`、`--tools`、`--json-schema`（v1.0.0 と同じ schema）、`--allowedTools`
+- renovate-major-review は `allowed_bots: renovate` を付ける。Renovate がラベルを付けたときの actor は `renovate[bot]` で、action は `allowed_bots` に無い bot の実行を拒否する（`src/github/validation/actor.ts`）
 - 結果: `steps.claude.outputs.structured_output` から `passed` / `body` を取り出す（v1.0.0 と同じ）。`scripts/gemini-output/` は消す
 - PR の情報の事前取得（`.review-context/`）は今のまま残す
 - 実行ログ（`execution_file`）を 7 日間 artifact に残す（v1.0.0 と同じ）
@@ -84,10 +85,11 @@ Claude Code の permissions の仕組み（VERIFIED：[Configure permissions](ht
 - `--disallowedTools` に `Read(//home/runner/work/_temp/**)` と `Read(./.git/**)` を入れる。deny rule は `cat` などの Bash のコマンドと、そこを指す symlink にも効く
   - `_temp` には、action が書く OIDC token と、交換した Anthropic の token の cache がある
   - `.git/config` には、action が `x-access-token:<github.token>` を書き込む（`src/github/operations/git-config.ts`）
-- `--disallowedTools` で、使わないツール（`Write`・`Edit`・`NotebookEdit`・`Agent`・`WebSearch`、docs-sync-check ではさらに `Bash`・`WebFetch`）をモデルから見えなくする
+- `--tools` で、モデルに見せるツールを列挙する（docs-sync-check は `Read`・`Glob`・`Grep`、renovate-major-review はさらに `Bash`・`WebFetch`）。拒否リストだけでは、`Workflow` など Claude Code が足していくツールが見えてしまう（試走の init message で VERIFIED）
+- `--disallowedTools` にも、使わないツール（`Write`・`Edit`・`NotebookEdit`・`Agent`・`WebSearch`、docs-sync-check ではさらに `Bash`・`WebFetch`）を書いておく
 - renovate-major-review の `--allowedTools` は `WebFetch`、`Bash(helm repo add:*)`、`Bash(helm repo update:*)`、`Bash(helm pull:*)`、`Bash(helm show:*)`
 - `git` と `gh` は許さない。`git diff /dev/null <file>` で任意のファイルを読め、`--output` で書けるため（v2.0.0 の最終レビュー）。PR の情報は `.review-context/` で足りる
-- **Claude の判断**: renovate-major-review の Bash では、読み取り専用のコマンド（`echo` など）が許可リストの外でも動くので、環境変数の GitHub の token（`GH_TOKEN`）は見えうる。この token は読み取り専用で job の終わりに失効するので、見えること自体は許容し、外に出す経路を下の Output の検査で止める。Anthropic の credential は上の deny rule と設定で守る
+- **Claude の判断**: renovate-major-review の Bash では、読み取り専用のコマンド（`echo` など）が許可リストの外でも動く。action は環境変数に GitHub の token（`GH_TOKEN` など）を入れるので、そのままだと Bash で読んで WebFetch で外に出せる。`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'` で、子プロセスの環境変数から secret を消す（`action.yml`、`docs/security.md`）。Anthropic の credential は上の deny rule と設定で守る
 - renovate-major-review の `helm` は、PR が commit した chart の symlink をたどって外のファイルを表示できる（Agent SDK 版の検討で VERIFIED）。renovate-major-review は自分のリポジトリの Renovate の PR だけを扱い、Renovate は版の数字しか変えないので、許容する
 
 ### Output
