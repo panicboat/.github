@@ -1,5 +1,5 @@
 # Builds the container image of one service and pushes it to ghcr.io.
-name: Reusable Container Builder
+name: 'Internal - Image Builder'
 
 on:
   workflow_call:

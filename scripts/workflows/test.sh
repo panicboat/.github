@@ -33,17 +33,24 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
-test_kubernetes_builder_checks_out_head_ref_only_for_helmfile() {
+test_kustomize_diff_checks_out_head_ref_only_for_helmfile() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
-    local builder="${workflows_dir}/reusable--kubernetes-builder.yaml"
+    local kustomize_diff="${workflows_dir}/internal--kustomize-diff.yaml"
     assert_eq '${{ github.head_ref }}' "$(yq '.jobs["deploy-helmfile"].with.ref' "${resolver}")"
     assert_eq 'null' "$(yq '.jobs["deploy-kustomize"].with.ref' "${resolver}")"
-    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout") | .with.ref' "${builder}")"
+    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout") | .with.ref' "${kustomize_diff}")"
 }
 
 test_nested_test_workflow_uses_dollar_slash() {
     local workflow="${workflows_dir}/test-shared-workflows--nested.yaml"
     assert_eq '$/.github/workflows/test-shared-workflows--checkout.yaml' "$(yq '.jobs[].uses' "${workflow}")"
+}
+
+test_nested_calls_resolve_to_existing_workflows() {
+    local target
+    for target in $(yq -N '.jobs[].uses | select(. != null and test("^\\$/"))' "${workflows_dir}"/*.y*ml); do
+        [ -f "${repo_root}/${target#\$/}" ] || { echo "  missing: ${target}" >&2; exit 1; }
+    done
 }
 
 failed=0
