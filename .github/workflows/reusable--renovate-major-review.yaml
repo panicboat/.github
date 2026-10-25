@@ -1,4 +1,4 @@
-# Reviews Renovate major-update pull requests with Gemini on Vertex AI and posts the review.
+# Reviews Renovate major-update pull requests with Claude and posts the review.
 name: 'Reusable - Renovate Major Review'
 
 on:
@@ -61,7 +61,7 @@ jobs:
       pull-requests: read
       id-token: write
     outputs:
-      body: ${{ steps.parse.outputs.body }}
+      body: ${{ steps.check.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,7 +82,7 @@ jobs:
 
       - name: Fetch pull request
         id: fetch-pull-request
-        # Gemini CLI redacts GitHub tokens from its shell tool, so the pull request is handed over as files instead of gh calls.
+        # The model gets no git or gh, since git diff and gh can read files outside the working directory.
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -92,50 +92,44 @@ jobs:
           gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files,headRefName > .review-context/pull-request.json
           gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
 
-      - name: Review with Gemini
-        id: gemini
-        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+      - name: Install bubblewrap
+        id: install-bubblewrap
+        # The secret scrub needs bubblewrap, which the action installs only when allowed_non_write_users is set.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          # Ubuntu 24.04 blocks the unprivileged user namespaces bubblewrap needs.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Review with Claude
+        id: claude
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         env:
-          # Only renovate[bot] branches of this repository reach this job; upstream text in the pull request is left to the prompt as data.
-          GEMINI_CLI_TRUST_WORKSPACE: 'true'
-          # The sandbox image has no helm, and tools.core leaves only the helm subcommands to the shell.
-          GEMINI_SANDBOX: 'false'
-          # The action copies .gemini/telemetry.log into gemini-artifacts/, which keeps each tool call and its arguments for review.
-          GEMINI_TELEMETRY_ENABLED: 'true'
-          GEMINI_TELEMETRY_TARGET: 'local'
-          GEMINI_TELEMETRY_OUTFILE: '.gemini/telemetry.log'
-          GEMINI_TELEMETRY_LOG_PROMPTS: 'true'
+          # The action puts the GitHub token in the env, which Bash could read and WebFetch could send out.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1'
         with:
-          gcp_workload_identity_provider: 'projects/237641919067/locations/global/workloadIdentityPools/github-actions/providers/github'
-          gcp_project_id: 'panicboat-platform-github'
-          gcp_location: 'global'
-          gcp_token_format: ''
-          use_vertex_ai: 'true'
-          gemini_cli_version: '0.63.0'
-          gemini_model: 'gemini-3.8-flash'
+          anthropic_federation_rule_id: 'fdrl_01EFTG7Y8vWedXu5dyKHk9VP'
+          anthropic_organization_id: '3e6cc666-1654-4da0-9d46-3abb52bc7288'
+          anthropic_service_account_id: 'svac_01XpqeHTNpHPf7zZSQXgck3S'
+          anthropic_workspace_id: 'wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv'
+          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
+          github_token: ${{ github.token }}
+          # Renovate adds the review label itself, and the action rejects bot actors not listed here.
+          allowed_bots: renovate
           prompt: |
             Read `${{ inputs.prompt-path }}` and follow it.
             Pull request number: ${{ github.event.pull_request.number }}
-          settings: |
-            {
-              "context": {
-                "fileFiltering": {
-                  "respectGitIgnore": false
-                }
-              },
-              "tools": {
-                "core": [
-                  "read_file",
-                  "glob",
-                  "grep_search",
-                  "web_fetch",
-                  "run_shell_command(helm repo add)",
-                  "run_shell_command(helm repo update)",
-                  "run_shell_command(helm pull)",
-                  "run_shell_command(helm show)"
-                ]
-              }
-            }
+          # _temp holds the OIDC and Anthropic tokens and .git/config holds the GitHub token, so neither is readable.
+          claude_args: |
+            --model claude-sonnet-5-5
+            --tools "Read,Glob,Grep,Bash,WebFetch"
+            --max-budget-usd 5
+            --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
+            --json-schema '{"type":"object","properties":{"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["body"]}'
+            --allowedTools "WebFetch,Bash(helm repo add:*),Bash(helm repo update:*),Bash(helm pull:*),Bash(helm show:*)"
+            --disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Read(//home/runner/work/_temp/**),Read(./.git/**)"
 
       - name: Checkout shared workflows
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,12 +139,13 @@ jobs:
           path: .shared-workflows
           persist-credentials: false
 
-      - name: Parse review
-        id: parse
+      - name: Check review
+        id: check
         env:
-          RESPONSE: ${{ steps.gemini.outputs.summary }}
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
-          if review="$(printf '%s' "$RESPONSE" | bash .shared-workflows/scripts/gemini-output/parse.sh review)"; then
+          if review="$(bash .shared-workflows/scripts/review-output/check.sh review)"; then
             delimiter="EOF_$(openssl rand -hex 16)"
             {
               echo "body<<${delimiter}"
@@ -159,25 +154,27 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Report token usage
-        if: ${{ !cancelled() }}
+      - name: Report cost
+        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
-          if [ -s gemini-artifacts/stdout.log ] && jq -e '.stats' gemini-artifacts/stdout.log >/dev/null 2>&1; then
+          if result="$(jq -ce '[.[] | select(.type == "result")] | last | {total_cost_usd, num_turns}' "$EXECUTION_FILE" 2>/dev/null)"; then
             {
-              echo '### Gemini token usage'
+              echo '### Claude cost'
               echo '```json'
-              jq '.stats.models' gemini-artifacts/stdout.log
+              echo "$result"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload execution log
-        if: ${{ !cancelled() && hashFiles('gemini-artifacts/**') != '' }}
+        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: renovate-major-review-execution
-          path: gemini-artifacts/
+          path: ${{ steps.claude.outputs.execution_file }}
           retention-days: 7
 
   post:
