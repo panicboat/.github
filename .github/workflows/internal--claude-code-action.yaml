@@ -1,0 +1,338 @@
+# Runs claude-code-action on the Claude subscription for a pull request and retries on Bedrock when the subscription cannot run.
+name: 'Internal - Claude Code Action'
+
+on:
+  workflow_call:
+    inputs:
+      prompt-path:
+        required: true
+        type: string
+        description: 'Path of the prompt file in the calling repository'
+      output-kind:
+        required: true
+        type: string
+        description: 'Shape of the structured output (docs-sync or review)'
+      model:
+        required: true
+        type: string
+        description: 'Model for the subscription run'
+      bedrock-model:
+        required: true
+        type: string
+        description: 'Bedrock inference profile for the fallback run'
+      tools:
+        required: true
+        type: string
+        description: 'Comma-separated tools the model can see'
+      allowed-tools:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated tools that run without approval (empty passes no --allowedTools)'
+      extra-disallowed-tools:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated tools appended to the common --disallowedTools'
+      max-budget-usd:
+        required: true
+        type: string
+        description: 'Cost limit of one run in USD'
+      allowed-bots:
+        required: false
+        type: string
+        default: ''
+        description: 'Bot actors allowed to trigger the run'
+      checkout-ref:
+        required: false
+        type: string
+        default: ''
+        description: 'Git ref to check out (empty uses the default ref of the triggering event)'
+      download-artifact-name:
+        required: false
+        type: string
+        default: ''
+        description: 'Artifact to download before the run (empty skips the download)'
+      download-artifact-path:
+        required: false
+        type: string
+        default: ''
+        description: 'Path to download the artifact into'
+      setup-aqua:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether to install the tools in aqua.yaml before the run'
+      execution-log-name:
+        required: true
+        type: string
+        description: 'Artifact name for the execution logs'
+    outputs:
+      body:
+        description: 'Comment body, empty when the output was missing or rejected'
+        value: ${{ jobs.claude.outputs.body }}
+      passed:
+        description: 'Verdict of a docs-sync run'
+        value: ${{ jobs.claude.outputs.passed }}
+      backend:
+        description: 'Backend that produced the output (subscription or bedrock)'
+        value: ${{ jobs.claude.outputs.backend }}
+
+jobs:
+  claude:
+    name: 'Claude'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Environment-scoped OIDC sub keeps a prompt-injected run from assuming the plan roles, which trust the pull_request sub.
+    environment: claude-code-action
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    outputs:
+      body: ${{ steps.check.outputs.body }}
+      passed: ${{ steps.check.outputs.passed }}
+      backend: ${{ steps.check.outputs.backend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.checkout-ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download artifact
+        if: inputs.download-artifact-name != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.download-artifact-name }}
+          path: ${{ inputs.download-artifact-path }}
+
+      - name: Setup aqua
+        if: inputs.setup-aqua
+        uses: aquaproj/aqua-installer@611554c6f0137ba41c8dd15aca8bee82504ea461 # v4.1.1
+        with:
+          aqua_version: v2.65.2
+
+      - name: Install bubblewrap
+        id: install-bubblewrap
+        if: ${{ contains(inputs.tools, 'Bash') }}
+        # The secret scrub needs bubblewrap, which the action installs only when allowed_non_write_users is set.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+          # Ubuntu 24.04 blocks the unprivileged user namespaces bubblewrap needs.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Fetch pull request
+        id: fetch-pull-request
+        # The model gets no git or gh, since git diff and gh can read files outside the working directory.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p .review-context
+          gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files,headRefName > .review-context/pull-request.json
+          gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
+
+      - name: Select output schema
+        id: schema
+        env:
+          OUTPUT_KIND: ${{ inputs.output-kind }}
+        run: |
+          case "$OUTPUT_KIND" in
+            docs-sync) schema='{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}' ;;
+            review) schema='{"type":"object","properties":{"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["body"]}' ;;
+            *) echo "unknown output-kind: $OUTPUT_KIND" >&2; exit 1 ;;
+          esac
+          echo "json=${schema}" >> "$GITHUB_OUTPUT"
+
+      # The role can read the token, so its credentials stay in step outputs instead of the env every later step inherits.
+      - name: Assume role for the token
+        id: aws-secrets
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::559744160976:role/github-oidc-auth-master-github-actions-claude-code-role
+          aws-region: ap-northeast-1
+          output-env-credentials: 'false'
+          output-credentials: 'true'
+          inline-session-policy: '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["secretsmanager:GetSecretValue"],"Resource":"arn:aws:secretsmanager:ap-northeast-1:559744160976:secret:github-oidc-auth-master-claude-code-oauth-token-*"}]}'
+
+      - name: Fetch subscription token
+        id: token
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.aws-secrets.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.aws-secrets.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.aws-secrets.outputs.aws-session-token }}
+        run: |
+          token="$(aws secretsmanager get-secret-value --region ap-northeast-1 --secret-id github-oidc-auth-master-claude-code-oauth-token --query SecretString --output text)"
+          if [ -z "$token" ]; then
+            echo "::warning::the subscription token is empty" >&2
+            exit 1
+          fi
+          echo "::add-mask::${token}"
+          delimiter="EOF_$(openssl rand -hex 16)"
+          {
+            echo "token<<${delimiter}"
+            echo "${token}"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude on the subscription
+        id: claude
+        if: ${{ steps.token.outcome == 'success' }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        env:
+          # The action puts the GitHub token in the env, which Bash could read and WebFetch could send out.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: ${{ contains(inputs.tools, 'Bash') && '1' || '' }}
+        with:
+          claude_code_oauth_token: ${{ steps.token.outputs.token }}
+          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ inputs.allowed-bots }}
+          prompt: |
+            Read `${{ inputs.prompt-path }}` and follow it.
+            Pull request number: ${{ github.event.pull_request.number }}
+          # _temp holds the OIDC token and .git/config holds the GitHub token, so neither is readable.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --tools "${{ inputs.tools }}"
+            --max-budget-usd ${{ inputs.max-budget-usd }}
+            --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
+            --json-schema '${{ steps.schema.outputs.json }}'
+            ${{ inputs.allowed-tools != '' && format('--allowedTools "{0}"', inputs.allowed-tools) || '' }}
+            --disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Read(//home/runner/work/_temp/**),Read(./.git/**)${{ inputs.extra-disallowed-tools != '' && format(',{0}', inputs.extra-disallowed-tools) || '' }}"
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
+      - name: Decide fallback
+        id: fallback
+        env:
+          TOKEN_OUTCOME: ${{ steps.token.outcome }}
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          bash .shared-workflows/scripts/review-output/fallback.sh >> "$GITHUB_OUTPUT"
+          # Both runs write the same execution file, so the subscription log is copied before Bedrock overwrites it.
+          if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+            cp "$EXECUTION_FILE" "${RUNNER_TEMP}/claude-execution-subscription.json"
+            echo "subscription_log=${RUNNER_TEMP}/claude-execution-subscription.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A fresh session limited to Bedrock keeps the fallback run from reading the token.
+      - name: Assume role for Bedrock
+        id: aws-bedrock
+        if: ${{ steps.fallback.outputs.fallback == 'true' }}
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::559744160976:role/github-oidc-auth-master-github-actions-claude-code-role
+          aws-region: us-east-1
+          output-env-credentials: 'false'
+          output-credentials: 'true'
+          inline-session-policy: '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream"],"Resource":"*"}]}'
+
+      - name: Run Claude on Bedrock
+        id: claude-bedrock
+        if: ${{ steps.fallback.outputs.fallback == 'true' }}
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: ${{ contains(inputs.tools, 'Bash') && '1' || '' }}
+          AWS_ACCESS_KEY_ID: ${{ steps.aws-bedrock.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.aws-bedrock.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.aws-bedrock.outputs.aws-session-token }}
+          AWS_REGION: us-east-1
+          # The role allows only Haiku 4.5 and Sonnet 4.6, so background tasks must not fall back to another Haiku.
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: global.anthropic.claude-haiku-4-5-20251001-v1:0
+        with:
+          use_bedrock: 'true'
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ inputs.allowed-bots }}
+          prompt: |
+            Read `${{ inputs.prompt-path }}` and follow it.
+            Pull request number: ${{ github.event.pull_request.number }}
+          claude_args: |
+            --model ${{ inputs.bedrock-model }}
+            --tools "${{ inputs.tools }}"
+            --max-budget-usd ${{ inputs.max-budget-usd }}
+            --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
+            --json-schema '${{ steps.schema.outputs.json }}'
+            ${{ inputs.allowed-tools != '' && format('--allowedTools "{0}"', inputs.allowed-tools) || '' }}
+            --disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Read(//home/runner/work/_temp/**),Read(./.git/**)${{ inputs.extra-disallowed-tools != '' && format(',{0}', inputs.extra-disallowed-tools) || '' }}"
+
+      - name: Check output
+        id: check
+        env:
+          OUTPUT_KIND: ${{ inputs.output-kind }}
+          FALLBACK: ${{ steps.fallback.outputs.fallback }}
+          REASON: ${{ steps.fallback.outputs.reason }}
+          BEDROCK_MODEL: ${{ inputs.bedrock-model }}
+          SUBSCRIPTION_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          BEDROCK_OUTPUT: ${{ steps.claude-bedrock.outputs.structured_output }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: |
+          backend=subscription
+          output="$SUBSCRIPTION_OUTPUT"
+          if [ "$FALLBACK" = "true" ]; then
+            backend=bedrock
+            output="$BEDROCK_OUTPUT"
+            echo "::warning::ran on Bedrock (${BEDROCK_MODEL}) because the subscription could not run: ${REASON}"
+            echo "### Fell back to Bedrock (${BEDROCK_MODEL}): ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "backend=${backend}" >> "$GITHUB_OUTPUT"
+          if verdict="$(STRUCTURED_OUTPUT="$output" bash .shared-workflows/scripts/review-output/check.sh "$OUTPUT_KIND")"; then
+            body="$(jq -r '.body' <<<"$verdict")"
+            if [ "$backend" = "bedrock" ]; then
+              body="$(printf '%s\n\n> ⚠️ subscription で動かせなかったため、Bedrock（`%s`）で実行しました。' "$body" "$BEDROCK_MODEL")"
+            fi
+            if [ "$OUTPUT_KIND" = "docs-sync" ]; then
+              echo "passed=$(jq -r '.passed' <<<"$verdict")" >> "$GITHUB_OUTPUT"
+            fi
+            delimiter="EOF_$(openssl rand -hex 16)"
+            {
+              echo "body<<${delimiter}"
+              echo "$body"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report cost
+        if: ${{ !cancelled() }}
+        env:
+          SUBSCRIPTION_EXECUTION_FILE: ${{ steps.fallback.outputs.subscription_log }}
+          BEDROCK_EXECUTION_FILE: ${{ steps.claude-bedrock.outputs.execution_file }}
+        run: |
+          for pair in "subscription:${SUBSCRIPTION_EXECUTION_FILE}" "bedrock:${BEDROCK_EXECUTION_FILE}"; do
+            file="${pair#*:}"
+            [ -n "$file" ] && [ -s "$file" ] || continue
+            if result="$(jq -ce '[.[] | select(.type == "result")] | last | select(. != null) | {total_cost_usd, num_turns}' "$file" 2>/dev/null)"; then
+              {
+                echo "### Claude cost (${pair%%:*})"
+                echo '```json'
+                echo "$result"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Upload execution log
+        if: ${{ !cancelled() && (steps.fallback.outputs.subscription_log != '' || steps.claude-bedrock.outputs.execution_file != '') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.execution-log-name }}
+          path: |
+            ${{ steps.fallback.outputs.subscription_log }}
+            ${{ steps.claude-bedrock.outputs.execution_file }}
+          retention-days: 7

@@ -123,105 +123,21 @@ jobs:
     name: 'Judge'
     needs: scope
     if: needs.scope.outputs.mode == 'judge'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Environment-scoped OIDC sub keeps a prompt-injected run from assuming the plan roles, which trust the pull_request sub.
-    environment: docs-sync-check
     permissions:
       contents: read
       pull-requests: read
       id-token: write
-    outputs:
-      passed: ${{ steps.check.outputs.passed }}
-      body: ${{ steps.check.outputs.body }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Fetch pull request
-        id: fetch-pull-request
-        # The model gets no git or gh, since git diff and gh can read files outside the working directory.
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          mkdir -p .review-context
-          gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json title,body,files > .review-context/pull-request.json
-          gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > .review-context/diff.patch
-
-      - name: Judge with Claude
-        id: claude
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
-        with:
-          anthropic_federation_rule_id: 'fdrl_01EFTG7Y8vWedXu5dyKHk9VP'
-          anthropic_organization_id: '3e6cc666-1654-4da0-9d46-3abb52bc7288'
-          anthropic_service_account_id: 'svac_01XpqeHTNpHPf7zZSQXgck3S'
-          anthropic_workspace_id: 'wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv'
-          # Read-only token; without it the action exchanges OIDC for the Claude App's write token.
-          github_token: ${{ github.token }}
-          prompt: |
-            Read `${{ inputs.prompt-path }}` and follow it.
-            Pull request number: ${{ github.event.pull_request.number }}
-          # _temp holds the OIDC and Anthropic tokens and .git/config holds the GitHub token, so neither is readable.
-          claude_args: |
-            --model claude-haiku-5-5
-            --tools "Read,Glob,Grep"
-            --max-budget-usd 0.5
-            --settings '{"permissions":{"blockReadsOutsideWorkingDirectories":true}}'
-            --json-schema '{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}'
-            --disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Bash,WebFetch,Read(//home/runner/work/_temp/**),Read(./.git/**)"
-
-      - name: Checkout shared workflows
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .shared-workflows
-          persist-credentials: false
-
-      - name: Check verdict
-        id: check
-        env:
-          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
-          GITHUB_TOKEN_VALUE: ${{ github.token }}
-        run: |
-          if verdict="$(bash .shared-workflows/scripts/review-output/check.sh docs-sync)"; then
-            delimiter="EOF_$(openssl rand -hex 16)"
-            echo "passed=$(jq -r '.passed' <<<"$verdict")" >> "$GITHUB_OUTPUT"
-            {
-              echo "body<<${delimiter}"
-              jq -r '.body' <<<"$verdict"
-              echo "${delimiter}"
-            } >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Report cost
-        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
-        env:
-          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: |
-          if result="$(jq -ce '[.[] | select(.type == "result")] | last | {total_cost_usd, num_turns}' "$EXECUTION_FILE" 2>/dev/null)"; then
-            {
-              echo '### Claude cost'
-              echo '```json'
-              echo "$result"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload execution log
-        if: ${{ !cancelled() && steps.claude.outputs.execution_file != '' }}
-        continue-on-error: true
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: docs-sync-check-execution
-          path: ${{ steps.claude.outputs.execution_file }}
-          retention-days: 7
+    uses: $/.github/workflows/internal--claude-code-action.yaml
+    with:
+      prompt-path: ${{ inputs.prompt-path }}
+      output-kind: docs-sync
+      model: claude-haiku-5-5
+      bedrock-model: global.anthropic.claude-haiku-4-5-20251001-v1:0
+      tools: Read,Glob,Grep
+      extra-disallowed-tools: Bash,WebFetch
+      max-budget-usd: '0.5'
+      checkout-ref: ${{ github.event.pull_request.head.sha }}
+      execution-log-name: docs-sync-check-execution
 
   report:
     name: 'Report'
