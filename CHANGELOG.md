@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/panicboat/.github/compare/v3.0.0...v3.1.0) (2026-10-26)
+
+
+### Features
+
+* run the review workflows on the Claude subscription with a Bedrock fallback ([#23](https://github.com/panicboat/.github/issues/23)) ([97ad567](https://github.com/panicboat/.github/commit/97ad567225c8e45c1793e93b1593e2f57525dfc6))
+
 ## [3.0.0](https://github.com/panicboat/.github/compare/v2.0.0...v3.0.0) (2026-10-25)
 
 
