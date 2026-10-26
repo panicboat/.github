@@ -71,74 +71,142 @@ test_docs_sync_status_does_not_name_a_model() {
     assert_eq "1" "$(grep -c "state=pending; description='AI が判定しています'" "${workflows_dir}/reusable--docs-sync-check.yaml")"
 }
 
-test_review_jobs_fetch_the_pull_request_before_the_model() {
-    local wf job
-    for pair in "reusable--docs-sync-check.yaml:judge" "reusable--renovate-major-review.yaml:review"; do
-        wf="${workflows_dir}/${pair%%:*}"
-        job="${pair##*:}"
-        assert_eq "fetch-pull-request claude" "$(yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\" or .id == \"claude\") | .id" "${wf}" | tr '\n' ' ' | sed 's/ $//')"
-        yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/pull-request.json'
-        yq ".jobs.${job}.steps[] | select(.id == \"fetch-pull-request\") | .run" "${wf}" | grep -q '.review-context/diff.patch'
+claude_workflow="${workflows_dir}/internal--claude-code-action.yaml"
+
+claude_job_step() {
+    yq ".jobs.claude.steps[] | select(.id == \"$1\")" "${claude_workflow}"
+}
+
+sorted_json() {
+    yq -o=json -I=0 'to_entries | sort_by(.key) | from_entries'
+}
+
+test_claude_job_runs_in_the_claude_code_action_environment() {
+    assert_eq "claude-code-action" "$(yq '.jobs.claude.environment' "${claude_workflow}")"
+    assert_eq '{"contents":"read","id-token":"write","pull-requests":"read"}' "$(yq '.jobs.claude.permissions' "${claude_workflow}" | sorted_json)"
+}
+
+test_claude_job_orders_its_steps() {
+    assert_eq "fetch-pull-request aws-secrets token claude fallback aws-bedrock claude-bedrock check" \
+        "$(yq '.jobs.claude.steps[] | select(.id != null) | .id | select(test("^(fetch-pull-request|aws-secrets|token|claude|fallback|aws-bedrock|claude-bedrock|check)$"))' "${claude_workflow}" | tr '\n' ' ' | sed 's/ $//')"
+    claude_job_step fetch-pull-request | yq '.run' | grep -q '.review-context/pull-request.json'
+    claude_job_step fetch-pull-request | yq '.run' | grep -q '.review-context/diff.patch'
+}
+
+test_claude_step_uses_the_subscription_token() {
+    local step
+    step="$(claude_job_step claude)"
+    assert_eq "anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13" "$(yq '.uses' <<<"${step}")"
+    assert_eq '${{ steps.token.outputs.token }}' "$(yq '.with.claude_code_oauth_token' <<<"${step}")"
+    assert_eq "null" "$(yq '.with.anthropic_api_key' <<<"${step}")"
+    assert_eq "null" "$(yq '.with.anthropic_federation_rule_id' <<<"${step}")"
+    yq '.if' <<<"${step}" | grep -qF "steps.token.outcome == 'success'"
+    assert_eq "null" "$(yq '.env.AWS_ACCESS_KEY_ID' <<<"${step}")"
+}
+
+test_claude_steps_keep_the_permission_settings() {
+    local id args
+    for id in claude claude-bedrock; do
+        args="$(claude_job_step "${id}" | yq '.with.claude_args')"
+        grep -q 'blockReadsOutsideWorkingDirectories' <<<"${args}"
+        grep -qF -- '--tools "${{ inputs.tools }}"' <<<"${args}"
+        grep -qF -- '--max-budget-usd ${{ inputs.max-budget-usd }}' <<<"${args}"
+        grep -qF -- '--disallowedTools "Write,Edit,NotebookEdit,Agent,WebSearch,Read(//home/runner/work/_temp/**),Read(./.git/**)' <<<"${args}"
+        grep -qF 'inputs.extra-disallowed-tools' <<<"${args}"
+        grep -qF 'inputs.allowed-tools' <<<"${args}"
+        grep -qF -- "--json-schema '\${{ steps.schema.outputs.json }}'" <<<"${args}"
+        assert_eq '${{ inputs.allowed-bots }}' "$(claude_job_step "${id}" | yq '.with.allowed_bots')"
+        assert_eq '${{ github.token }}' "$(claude_job_step "${id}" | yq '.with.github_token')"
     done
 }
 
-claude_step() {
-    yq ".jobs.$2.steps[] | select(.id == \"claude\")" "${workflows_dir}/$1"
+test_schema_step_selects_the_output_kind() {
+    local run
+    run="$(claude_job_step schema | yq '.run')"
+    grep -qF '{"type":"object","properties":{"passed":{"type":"boolean"},"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["passed","body"]}' <<<"${run}"
+    grep -qF '{"type":"object","properties":{"body":{"type":"string","minLength":1,"maxLength":60000}},"required":["body"]}' <<<"${run}"
 }
 
-assert_claude_step_uses_wif() {
-    local step="$1"
-    assert_eq "anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13" "$(yq '.uses' <<<"${step}")"
-    assert_eq "fdrl_01EFTG7Y8vWedXu5dyKHk9VP|3e6cc666-1654-4da0-9d46-3abb52bc7288|svac_01XpqeHTNpHPf7zZSQXgck3S|wrkspc_01Pn5wRk8fQ8vXGsUGzH66wv" \
-        "$(yq '.with | [.anthropic_federation_rule_id, .anthropic_organization_id, .anthropic_service_account_id, .anthropic_workspace_id] | join("|")' <<<"${step}")"
-    assert_eq "null" "$(yq '.with.anthropic_api_key' <<<"${step}")"
-    assert_eq "null" "$(yq '.with.claude_code_oauth_token' <<<"${step}")"
-    local args
-    args="$(yq '.with.claude_args' <<<"${step}")"
-    grep -q 'blockReadsOutsideWorkingDirectories' <<<"${args}"
-    grep -qF 'Read(//home/runner/work/_temp/**)' <<<"${args}"
-    grep -qF 'Read(./.git/**)' <<<"${args}"
+test_bedrock_step_runs_only_on_fallback() {
+    local step
+    step="$(claude_job_step claude-bedrock)"
+    yq '.if' <<<"${step}" | grep -qF "steps.fallback.outputs.fallback == 'true'"
+    claude_job_step aws-bedrock | yq '.if' | grep -qF "steps.fallback.outputs.fallback == 'true'"
+    assert_eq "true" "$(yq '.with.use_bedrock' <<<"${step}")"
+    yq '.with.claude_args' <<<"${step}" | grep -qF -- '--model ${{ inputs.bedrock-model }}'
+    claude_job_step claude | yq '.with.claude_args' | grep -qF -- '--model ${{ inputs.model }}'
+    assert_eq "global.anthropic.claude-haiku-4-5-20251001-v1:0" "$(yq '.env.ANTHROPIC_DEFAULT_HAIKU_MODEL' <<<"${step}")"
+    assert_eq "us-east-1" "$(yq '.env.AWS_REGION' <<<"${step}")"
+    assert_eq '${{ steps.aws-bedrock.outputs.aws-access-key-id }}' "$(yq '.env.AWS_ACCESS_KEY_ID' <<<"${step}")"
 }
 
-test_docs_sync_judge_runs_claude_code_action() {
-    local wf="${workflows_dir}/reusable--docs-sync-check.yaml" step args
-    step="$(claude_step reusable--docs-sync-check.yaml judge)"
-    assert_claude_step_uses_wif "${step}"
-    args="$(yq '.with.claude_args' <<<"${step}")"
-    grep -qF -- '--model claude-haiku-5-5' <<<"${args}"
-    grep -qF -- '--max-budget-usd 0.5' <<<"${args}"
-    ! grep -qF -- '--allowedTools' <<<"${args}"
-    grep -qE -- '--disallowedTools "[^"]*Bash[,"]' <<<"${args}"
-    assert_eq "" "$(yq '.jobs.judge.steps[] | select(.uses == "*run-gemini-cli*" or .uses == "*configure-aws-credentials*") | .name' "${wf}")"
+test_aws_credentials_stay_out_of_the_job_env() {
+    local id step
+    assert_eq "aws-secrets aws-bedrock" "$(yq '.jobs.claude.steps[] | select(.uses == "aws-actions/configure-aws-credentials@*") | .id' "${claude_workflow}" | tr '\n' ' ' | sed 's/ $//')"
+    for id in aws-secrets aws-bedrock; do
+        step="$(claude_job_step "${id}")"
+        assert_eq "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd" "$(yq '.uses' <<<"${step}")"
+        assert_eq "arn:aws:iam::559744160976:role/github-oidc-auth-master-github-actions-claude-code-role" "$(yq '.with.role-to-assume' <<<"${step}")"
+        assert_eq "false true" "$(yq '[.with.output-env-credentials, .with.output-credentials] | join(" ")' <<<"${step}")"
+    done
+    assert_eq '["secretsmanager:GetSecretValue"]' "$(claude_job_step aws-secrets | yq '.with.inline-session-policy' | jq -c '[.Statement[].Action] | flatten | unique')"
+    assert_eq '["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream"]' "$(claude_job_step aws-bedrock | yq '.with.inline-session-policy' | jq -c '[.Statement[].Action] | flatten | unique')"
 }
 
-test_renovate_review_runs_claude_code_action() {
-    local wf="${workflows_dir}/reusable--renovate-major-review.yaml" step args
-    step="$(claude_step reusable--renovate-major-review.yaml review)"
-    assert_claude_step_uses_wif "${step}"
-    args="$(yq '.with.claude_args' <<<"${step}")"
-    grep -qF -- '--model claude-sonnet-5-5' <<<"${args}"
-    grep -qF -- '--max-budget-usd 5' <<<"${args}"
-    grep -qF -- '--allowedTools "WebFetch,Bash(helm repo add:*),Bash(helm repo update:*),Bash(helm pull:*),Bash(helm show:*)"' <<<"${args}"
-    assert_eq "" "$(yq '.jobs.review.steps[] | select(.uses == "*run-gemini-cli*" or .uses == "*configure-aws-credentials*") | .name' "${wf}")"
+test_token_stays_out_of_the_env() {
+    local step
+    step="$(claude_job_step token)"
+    assert_eq "true" "$(yq '.continue-on-error' <<<"${step}")"
+    yq '.run' <<<"${step}" | grep -qF '::add-mask::'
+    ! yq '.run' <<<"${step}" | grep -qF 'GITHUB_ENV'
+    yq '.run' <<<"${step}" | grep -qF 'github-oidc-auth-master-claude-code-oauth-token'
+    yq '.run' <<<"${step}" | grep -qF ".CLAUDE_CODE_OAUTH_TOKEN // empty"
+    assert_eq '${{ steps.aws-secrets.outputs.aws-access-key-id }}' "$(yq '.env.AWS_ACCESS_KEY_ID' <<<"${step}")"
+    ! grep -qF 'GITHUB_ENV' "${claude_workflow}"
 }
 
-test_review_jobs_enable_only_the_listed_tools() {
-    grep -qF -- '--tools "Read,Glob,Grep"' <<<"$(yq '.with.claude_args' <<<"$(claude_step reusable--docs-sync-check.yaml judge)")"
-    grep -qF -- '--tools "Read,Glob,Grep,Bash,WebFetch"' <<<"$(yq '.with.claude_args' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+test_claude_job_scrubs_secrets_when_bash_is_enabled() {
+    local id
+    assert_eq "\${{ contains(inputs.tools, 'Bash') }}" "$(claude_job_step install-bubblewrap | yq '.if')"
+    claude_job_step install-bubblewrap | yq '.run' | grep -q 'apt-get install -y --no-install-recommends bubblewrap'
+    for id in claude claude-bedrock; do
+        assert_eq "\${{ contains(inputs.tools, 'Bash') && '1' || '' }}" "$(claude_job_step "${id}" | yq '.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB')"
+    done
 }
 
-test_renovate_review_accepts_the_renovate_bot() {
-    assert_eq "renovate" "$(yq '.with.allowed_bots' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
+test_check_step_marks_a_bedrock_run() {
+    local run
+    run="$(claude_job_step check | yq '.run')"
+    grep -qF '> ⚠️ subscription で動かせなかったため、Bedrock（`' <<<"${run}"
+    grep -qF 'check.sh' <<<"${run}"
 }
 
-test_renovate_review_scrubs_secrets_from_bash() {
-    local wf="${workflows_dir}/reusable--renovate-major-review.yaml"
-    assert_eq "1" "$(yq '.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB' <<<"$(claude_step reusable--renovate-major-review.yaml review)")"
-    assert_eq "install-bubblewrap claude" "$(yq '.jobs.review.steps[] | select(.id == "install-bubblewrap" or .id == "claude") | .id' "${wf}" | tr '\n' ' ' | sed 's/ $//')"
-    yq '.jobs.review.steps[] | select(.id == "install-bubblewrap") | .run' "${wf}" | grep -q 'apt-get install -y --no-install-recommends bubblewrap'
+test_fallback_step_warns_before_the_bedrock_run() {
+    claude_job_step fallback | yq '.run' | grep -qF '::warning::'
+    claude_job_step fallback | yq '.run' | grep -qF 'GITHUB_STEP_SUMMARY'
 }
 
+test_check_step_fails_without_an_output() {
+    local run
+    run="$(claude_job_step check | yq '.run')"
+    grep -qE '^else$' <<<"${run}"
+    grep -qF '::error::' <<<"${run}"
+    tail -n 3 <<<"${run}" | grep -qF 'exit 1'
+}
+
+test_review_jobs_call_the_claude_job() {
+    local docs_sync renovate
+    docs_sync="${workflows_dir}/reusable--docs-sync-check.yaml"
+    renovate="${workflows_dir}/reusable--renovate-major-review.yaml"
+    assert_eq '$/.github/workflows/internal--claude-code-action.yaml' "$(yq '.jobs.judge.uses' "${docs_sync}")"
+    assert_eq '$/.github/workflows/internal--claude-code-action.yaml' "$(yq '.jobs.review.uses' "${renovate}")"
+    assert_eq '{"bedrock-model":"global.anthropic.claude-haiku-4-5-20251001-v1:0","checkout-ref":"${{ github.event.pull_request.head.sha }}","execution-log-name":"docs-sync-check-execution","extra-disallowed-tools":"Bash,WebFetch","max-budget-usd":"0.5","model":"claude-haiku-5-5","output-kind":"docs-sync","prompt-path":"${{ inputs.prompt-path }}","tools":"Read,Glob,Grep"}' \
+        "$(yq '.jobs.judge.with' "${docs_sync}" | sorted_json)"
+    assert_eq '{"allowed-bots":"renovate","allowed-tools":"WebFetch,Bash(helm repo add:*),Bash(helm repo update:*),Bash(helm pull:*),Bash(helm show:*)","bedrock-model":"global.anthropic.claude-sonnet-4-6","download-artifact-name":"render-diff","download-artifact-path":".render-diff","execution-log-name":"renovate-major-review-execution","max-budget-usd":"5","model":"claude-sonnet-5-5","output-kind":"review","prompt-path":"${{ inputs.prompt-path }}","setup-aqua":true,"tools":"Read,Glob,Grep,Bash,WebFetch"}' \
+        "$(yq '.jobs.review.with' "${renovate}" | sorted_json)"
+    assert_eq '{"contents":"read","id-token":"write","pull-requests":"read"}' "$(yq '.jobs.judge.permissions' "${docs_sync}" | sorted_json)"
+    assert_eq '{"contents":"read","id-token":"write","pull-requests":"read"}' "$(yq '.jobs.review.permissions' "${renovate}" | sorted_json)"
+}
 
 failed=0
 for test_name in $(compgen -A function test_); do
