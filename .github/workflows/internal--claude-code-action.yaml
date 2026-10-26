@@ -225,8 +225,16 @@ jobs:
           TOKEN_OUTCOME: ${{ steps.token.outcome }}
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          BEDROCK_MODEL: ${{ inputs.bedrock-model }}
         run: |
-          bash .shared-workflows/scripts/review-output/fallback.sh >> "$GITHUB_OUTPUT"
+          decision="$(bash .shared-workflows/scripts/review-output/fallback.sh)"
+          echo "$decision" >> "$GITHUB_OUTPUT"
+          # Warned here so the reason still shows when the Bedrock run fails and skips the later steps.
+          if grep -qx 'fallback=true' <<<"$decision"; then
+            reason="$(sed -n 's/^reason=//p' <<<"$decision")"
+            echo "::warning::running on Bedrock (${BEDROCK_MODEL}) because the subscription could not run: ${reason}"
+            echo "### Fell back to Bedrock (${BEDROCK_MODEL}): ${reason}" >> "$GITHUB_STEP_SUMMARY"
+          fi
           # Both runs write the same execution file, so the subscription log is copied before Bedrock overwrites it.
           if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
             cp "$EXECUTION_FILE" "${RUNNER_TEMP}/claude-execution-subscription.json"
@@ -278,7 +286,6 @@ jobs:
         env:
           OUTPUT_KIND: ${{ inputs.output-kind }}
           FALLBACK: ${{ steps.fallback.outputs.fallback }}
-          REASON: ${{ steps.fallback.outputs.reason }}
           BEDROCK_MODEL: ${{ inputs.bedrock-model }}
           SUBSCRIPTION_OUTPUT: ${{ steps.claude.outputs.structured_output }}
           BEDROCK_OUTPUT: ${{ steps.claude-bedrock.outputs.structured_output }}
@@ -289,8 +296,6 @@ jobs:
           if [ "$FALLBACK" = "true" ]; then
             backend=bedrock
             output="$BEDROCK_OUTPUT"
-            echo "::warning::ran on Bedrock (${BEDROCK_MODEL}) because the subscription could not run: ${REASON}"
-            echo "### Fell back to Bedrock (${BEDROCK_MODEL}): ${REASON}" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "backend=${backend}" >> "$GITHUB_OUTPUT"
           if verdict="$(STRUCTURED_OUTPUT="$output" bash .shared-workflows/scripts/review-output/check.sh "$OUTPUT_KIND")"; then
@@ -307,6 +312,10 @@ jobs:
               echo "$body"
               echo "${delimiter}"
             } >> "$GITHUB_OUTPUT"
+          else
+            # The subscription step continues on error, so an empty output must fail the job to show up.
+            echo "::error::no usable output from the ${backend} run"
+            exit 1
           fi
 
       - name: Report cost

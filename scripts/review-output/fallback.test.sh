@@ -34,6 +34,7 @@ check falls_back_when_the_log_is_not_json success failure 'not json' 'fallback=t
 check falls_back_on_an_error_result success failure '[{"type":"result","subtype":"error_during_execution"}]' 'fallback=true reason=subscription-failed'
 check keeps_a_budget_stop success failure '[{"type":"result","subtype":"error_max_budget_usd"}]' 'fallback=false reason='
 check keeps_a_turn_stop success failure '[{"type":"result","subtype":"error_max_turns"}]' 'fallback=false reason='
+check keeps_a_structured_output_stop success failure '[{"type":"result","subtype":"error_max_structured_output_retries"}]' 'fallback=false reason='
 check reads_the_last_result success failure '[{"type":"result","subtype":"error_during_execution"},{"type":"system"},{"type":"result","subtype":"error_max_budget_usd"}]' 'fallback=false reason='
 
 exit "$failed"

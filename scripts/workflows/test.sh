@@ -179,7 +179,19 @@ test_check_step_marks_a_bedrock_run() {
     run="$(claude_job_step check | yq '.run')"
     grep -qF '> ⚠️ subscription で動かせなかったため、Bedrock（`' <<<"${run}"
     grep -qF 'check.sh' <<<"${run}"
-    grep -qF '::warning::' <<<"${run}"
+}
+
+test_fallback_step_warns_before_the_bedrock_run() {
+    claude_job_step fallback | yq '.run' | grep -qF '::warning::'
+    claude_job_step fallback | yq '.run' | grep -qF 'GITHUB_STEP_SUMMARY'
+}
+
+test_check_step_fails_without_an_output() {
+    local run
+    run="$(claude_job_step check | yq '.run')"
+    grep -qE '^else$' <<<"${run}"
+    grep -qF '::error::' <<<"${run}"
+    tail -n 3 <<<"${run}" | grep -qF 'exit 1'
 }
 
 test_review_jobs_call_the_claude_job() {
