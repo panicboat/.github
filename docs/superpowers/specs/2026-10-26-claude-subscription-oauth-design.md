@@ -70,6 +70,7 @@
     - 下の secret の `secretsmanager:GetSecretValue`
     - Bedrock の `InvokeModel`・`InvokeModelWithResponseStream`（`global.anthropic.claude-haiku-4-5-20251001-v1:0` と `global.anthropic.claude-sonnet-4-6` の inference profile と、その先の foundation model。消す前の `bedrock.tf` と同じ形）
 - secret: `github-oidc-auth-master-claude-code-oauth-token`（ap-northeast-1）
+  - 値は key-value の JSON（`{"CLAUDE_CODE_OAUTH_TOKEN": "<token>"}`）にする（ユーザー）。項目を足せるようにするため
   - **Claude の判断**: Terraform で作るのは中身が空の secret だけにする。値（`aws_secretsmanager_secret_version`）を Terraform で持つと tfstate に平文が残るため
   - 値はユーザーが `claude setup-token` で発行し、`aws secretsmanager put-secret-value` で入れる。shell の履歴に残らないよう、値はファイルか標準入力から渡す（手順は plan に書く）
 - テストは `aws/github-oidc-auth/modules/tests/` に、消す前の `bedrock_role.tftest.hcl` と同じ形で書く

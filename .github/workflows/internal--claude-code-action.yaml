@@ -170,9 +170,11 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ steps.aws-secrets.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.aws-secrets.outputs.aws-session-token }}
         run: |
-          token="$(aws secretsmanager get-secret-value --region ap-northeast-1 --secret-id github-oidc-auth-master-claude-code-oauth-token --query SecretString --output text)"
+          secret="$(aws secretsmanager get-secret-value --region ap-northeast-1 --secret-id github-oidc-auth-master-claude-code-oauth-token --query SecretString --output text)"
+          # SILENT: a value that is not JSON leaves the token empty, which the check below reports.
+          token="$(jq -r '.CLAUDE_CODE_OAUTH_TOKEN // empty' <<<"$secret" 2>/dev/null || true)"
           if [ -z "$token" ]; then
-            echo "::warning::the subscription token is empty" >&2
+            echo "::warning::the secret has no CLAUDE_CODE_OAUTH_TOKEN" >&2
             exit 1
           fi
           echo "::add-mask::${token}"

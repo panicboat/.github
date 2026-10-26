@@ -160,6 +160,7 @@ test_token_stays_out_of_the_env() {
     yq '.run' <<<"${step}" | grep -qF '::add-mask::'
     ! yq '.run' <<<"${step}" | grep -qF 'GITHUB_ENV'
     yq '.run' <<<"${step}" | grep -qF 'github-oidc-auth-master-claude-code-oauth-token'
+    yq '.run' <<<"${step}" | grep -qF ".CLAUDE_CODE_OAUTH_TOKEN // empty"
     assert_eq '${{ steps.aws-secrets.outputs.aws-access-key-id }}' "$(yq '.env.AWS_ACCESS_KEY_ID' <<<"${step}")"
     ! grep -qF 'GITHUB_ENV' "${claude_workflow}"
 }
