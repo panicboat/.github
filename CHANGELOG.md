@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/panicboat/.github/compare/v3.1.0...v3.1.1) (2026-10-27)
+
+
+### Code Refactoring
+
+* read the Claude Code OAuth token from the renamed secret ([#26](https://github.com/panicboat/.github/issues/26)) ([894c03f](https://github.com/panicboat/.github/commit/894c03f6e3834388f395e408857c2c2bbcf1fb48))
+
 ## [3.1.0](https://github.com/panicboat/.github/compare/v3.0.0...v3.1.0) (2026-10-26)
 
 
