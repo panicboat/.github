@@ -150,6 +150,7 @@ test_aws_credentials_stay_out_of_the_job_env() {
         assert_eq "false true" "$(yq '[.with.output-env-credentials, .with.output-credentials] | join(" ")' <<<"${step}")"
     done
     assert_eq '["secretsmanager:GetSecretValue"]' "$(claude_job_step aws-secrets | yq '.with.inline-session-policy' | jq -c '[.Statement[].Action] | flatten | unique')"
+    assert_eq '["arn:aws:secretsmanager:ap-northeast-1:559744160976:secret:github-actions/claude-code/oauth-token-*"]' "$(claude_job_step aws-secrets | yq '.with.inline-session-policy' | jq -c '[.Statement[].Resource] | flatten | unique')"
     assert_eq '["bedrock:InvokeModel","bedrock:InvokeModelWithResponseStream"]' "$(claude_job_step aws-bedrock | yq '.with.inline-session-policy' | jq -c '[.Statement[].Action] | flatten | unique')"
 }
 
@@ -159,7 +160,7 @@ test_token_stays_out_of_the_env() {
     assert_eq "true" "$(yq '.continue-on-error' <<<"${step}")"
     yq '.run' <<<"${step}" | grep -qF '::add-mask::'
     ! yq '.run' <<<"${step}" | grep -qF 'GITHUB_ENV'
-    yq '.run' <<<"${step}" | grep -qF 'github-oidc-auth-master-claude-code-oauth-token'
+    yq '.run' <<<"${step}" | grep -qF -- '--secret-id github-actions/claude-code/oauth-token '
     yq '.run' <<<"${step}" | grep -qF ".CLAUDE_CODE_OAUTH_TOKEN // empty"
     assert_eq '${{ steps.aws-secrets.outputs.aws-access-key-id }}' "$(yq '.env.AWS_ACCESS_KEY_ID' <<<"${step}")"
     ! grep -qF 'GITHUB_ENV' "${claude_workflow}"
