@@ -17,7 +17,7 @@ patterns="$(jq -r --arg service "${service}" --argjson all "${all}" '
     | select(.value.name == "terragrunt")
     | .key as $stack
     | .value as $value
-    | ($value.environments | to_entries[] | select(.value.apply_trigger == "release") | .key) as $environment
+    | ($value.environments | to_entries[] | select(.key == "production") | .key) as $environment
     | $value.paths[]
     | select(contains("{service}") and contains("{environment}"))
     | [$stack, ., $environment, (gsub("\\{environment\\}"; $environment) | if $all then . else gsub("\\{service\\}"; $service) end)]

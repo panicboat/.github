@@ -70,7 +70,7 @@ while IFS= read -r config_file; do
             ($package | split("/")) as $package_segments
             | [
                 .stacks[] | select(.name == "terragrunt")
-                | [.environments | to_entries[] | select(.value.apply_trigger != "release") | .key] as $environments
+                | [.environments | to_entries[] | select(.key != "production") | .key] as $environments
                 | .paths[] | select(contains("{service}") and contains("{environment}"))
                 | split("/") as $segments
                 | ($segments | index("{service}") + 1) as $depth
