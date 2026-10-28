@@ -1,4 +1,4 @@
-# Builds the container image of a published service release or a dispatched tag and tags it with the release version.
+# Builds the container image of a published service release or a dispatched tag and tags it with the release version and the release tag.
 name: 'Reusable - Release - Build'
 
 on:
@@ -19,6 +19,7 @@ jobs:
     outputs:
       service: ${{ steps.parse.outputs.service }}
       version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
       working-directory: ${{ steps.resolve-dir.outputs.working-directory }}
     steps:
       - name: Parse tag
@@ -34,8 +35,11 @@ jobs:
           fi
           SERVICE="${BASH_REMATCH[1]}"
           VERSION="v${BASH_REMATCH[2]}"
-          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "service=$SERVICE"
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Resolve working directory
@@ -66,5 +70,6 @@ jobs:
       working-directory: ${{ needs.detect-component.outputs.working-directory }}
       app-id: ${{ inputs.app-id }}
       semver-tag: ${{ needs.detect-component.outputs.version }}
+      release-tag: ${{ needs.detect-component.outputs.tag }}
     secrets:
       private-key: ${{ secrets.private-key }}

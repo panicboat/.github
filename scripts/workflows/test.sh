@@ -37,6 +37,15 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
+test_release_build_tags_the_release_tag() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    assert_eq '${{ needs.detect-component.outputs.tag }}' "$(yq '.jobs["container-build"].with["release-tag"]' "${build}")"
+    assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.jobs["detect-component"].outputs.tag' "${build}")"
+    assert_eq "" "$(yq '.on.workflow_call.inputs["release-tag"].default' "${builder}")"
+    grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
+}
+
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
     local kustomize_builder="${workflows_dir}/internal--kustomize-builder.yaml"
