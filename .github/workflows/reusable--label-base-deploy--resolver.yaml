@@ -1,4 +1,4 @@
-# Resolves deploy labels into targets and runs each stack the caller's workflow config enables: terragrunt plan/apply, container builds, and kustomize/helmfile diffs on pull requests.
+# Resolves deploy labels into targets and runs each stack the caller's workflow config enables: terragrunt plan on pull requests and apply of non-production environments on push, container builds, and kustomize/helmfile diffs on pull requests.
 name: 'Reusable - Label Base Deploy - Resolver'
 
 on:
@@ -28,17 +28,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Checkout shared workflows
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .shared-workflows
-          persist-credentials: false
-
-      - name: Validate apply_trigger
-        run: bash .shared-workflows/scripts/terragrunt-release/validate-apply-trigger.sh "${{ inputs.config-path }}"
 
       - name: Generate GitHub App token
         id: app-token
@@ -79,7 +68,7 @@ jobs:
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
-      action-type: ${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.apply_trigger == 'merge' && 'apply' || '')) || '' }}
+      action-type: ${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}
       iam-role: ${{ github.event_name == 'pull_request' && matrix.target.iam_role_plan || matrix.target.iam_role_apply }}
       aws-region: ${{ matrix.target.aws_region }}
       working-directory: ${{ matrix.target.working_directory }}

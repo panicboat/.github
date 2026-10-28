@@ -14,11 +14,15 @@ assert_eq() {
     fi
 }
 
-test_resolver_applies_only_merge_targets() {
-    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.apply_trigger == 'merge' && 'apply' || '')) || '' }}"
+test_resolver_applies_only_non_production_targets() {
+    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
     local actual
     actual="$(yq '.jobs["deploy-terragrunt"].with["action-type"]' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
     assert_eq "${expected}" "${actual}"
+}
+
+test_workflows_do_not_read_apply_trigger() {
+    assert_eq "" "$(grep -rl --exclude='*test.sh' 'apply_trigger\|validate-apply-trigger' "${workflows_dir}" "${repo_root}/scripts" || true)"
 }
 
 test_release_workflows_skip_empty_targets() {
