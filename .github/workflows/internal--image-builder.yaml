@@ -21,6 +21,11 @@ on:
         type: string
         default: ''
         description: 'Optional semver tag (e.g. v0.1.0) to add to the built image. Only set when called from release event flow.'
+      release-tag:
+        required: false
+        type: string
+        default: ''
+        description: 'Optional release tag (e.g. service-v0.1.0) to add to the built image as is. Only set when called from release event flow.'
     secrets:
       private-key:
         required: true
@@ -78,6 +83,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.actor }}
             type=semver,pattern={{raw}},value=${{ inputs.semver-tag }},enable=${{ inputs.semver-tag != '' }}
+            type=raw,value=${{ inputs.release-tag }},enable=${{ inputs.release-tag != '' }}
 
       - name: Build and push Docker image
         if: steps.dockerfile.outputs.exists == 'true'

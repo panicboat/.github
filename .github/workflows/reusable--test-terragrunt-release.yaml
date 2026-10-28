@@ -1,4 +1,4 @@
-# Validates the caller's terragrunt apply_trigger values and the release-please configs of its release environments.
+# Validates the release-please configs of the caller's production environments.
 name: 'Reusable - Test Terragrunt Release'
 
 on:
@@ -21,9 +21,6 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: .shared-workflows
           persist-credentials: false
-
-      - name: Validate apply_trigger
-        run: bash .shared-workflows/scripts/terragrunt-release/validate-apply-trigger.sh
 
       - name: Check release-please configs
         run: bash .shared-workflows/scripts/terragrunt-release/check-release-configs.sh

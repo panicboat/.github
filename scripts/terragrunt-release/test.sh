@@ -34,62 +34,6 @@ assert_stderr_contains() {
     fi
 }
 
-test_validate_accepts_merge_and_release() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: terragrunt
-    environments:
-      develop:
-        apply_trigger: merge
-      production:
-        apply_trigger: release
-YAML
-    bash "${script_dir}/validate-apply-trigger.sh"
-}
-
-test_validate_rejects_missing_trigger() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: terragrunt
-    environments:
-      develop:
-        apply_trigger: merge
-      production:
-        aws_region: ap-northeast-1
-YAML
-    assert_fails bash "${script_dir}/validate-apply-trigger.sh"
-    assert_stderr_contains "environments.production.apply_trigger"
-}
-
-test_validate_rejects_unknown_value() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: terragrunt
-    environments:
-      production:
-        apply_trigger: relase
-YAML
-    assert_fails bash "${script_dir}/validate-apply-trigger.sh"
-    assert_stderr_contains "(got 'relase')"
-}
-
-test_validate_ignores_non_terragrunt_stacks() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: container
-    paths:
-      - "dystopia/{service}"
-  - name: terragrunt
-    environments:
-      develop:
-        apply_trigger: merge
-  - name: kubernetes
-    paths:
-      - "dystopia/{service}/kubernetes/overlays/{environment}"
-YAML
-    bash "${script_dir}/validate-apply-trigger.sh"
-}
-
 test_release_service_parses_tag() {
     assert_eq "monolith" "$(bash "${script_dir}/release-service.sh" --tag monolith-v1.2.3)"
 }
@@ -135,12 +79,10 @@ stacks:
         aws_region: ap-northeast-1
         iam_role_plan: arn:aws:iam::111111111111:role/develop-plan
         iam_role_apply: arn:aws:iam::111111111111:role/develop-apply
-        apply_trigger: merge
       production:
         aws_region: ap-northeast-1
         iam_role_plan: arn:aws:iam::222222222222:role/production-plan
         iam_role_apply: arn:aws:iam::222222222222:role/production-apply
-        apply_trigger: release
   - name: kubernetes
     paths:
       - "{product}/{service}/kubernetes/overlays/{environment}"
@@ -157,6 +99,24 @@ test_release_targets_lists_release_envs() {
     local targets
     targets="$(bash "${script_dir}/release-targets.sh" monolith)"
     assert_eq "${expected}" "${targets}"
+}
+
+test_release_targets_treats_only_production_as_release() {
+    write_release_config
+    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.staging) = {"aws_region": "ap-northeast-1"}' workflow-config.yaml
+    mkdir -p dystopia/monolith/infrastructure/aws/{develop,staging,production}
+    local targets
+    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
+    assert_eq "production" "$(jq -r 'map(.environment) | join(" ")' <<<"${targets}")"
+}
+
+test_release_targets_ignores_leftover_apply_trigger() {
+    write_release_config
+    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.develop.apply_trigger) = "release"' workflow-config.yaml
+    mkdir -p dystopia/monolith/infrastructure/aws/{develop,production}
+    local targets
+    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
+    assert_eq "production" "$(jq -r 'map(.environment) | join(" ")' <<<"${targets}")"
 }
 
 test_release_targets_finds_other_products() {
@@ -259,8 +219,7 @@ stacks:
     paths:
       - "{product}/{service}/infrastructure/aws/{environment}"
     environments:
-      production:
-        apply_trigger: release
+      production: {}
 YAML
     mkdir -p dystopia/monolith/infrastructure/aws/production
     write_service_release_config dystopia/monolith monolith '[]'
@@ -283,9 +242,20 @@ test_check_configs_rejects_missing_exclude_paths() {
 
 test_check_configs_accepts_exclude_paths_in_any_order() {
     write_release_config
-    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.staging) = {"apply_trigger": "merge"}' workflow-config.yaml
+    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.staging) = {"aws_region": "ap-northeast-1"}' workflow-config.yaml
     mkdir -p dystopia/monolith/infrastructure/aws/production
     write_service_release_config dystopia/monolith monolith '["dystopia/monolith/infrastructure/aws/staging","dystopia/monolith/infrastructure/aws/develop"]'
+    assert_eq "" "$(check_configs 2>&1)"
+}
+
+test_check_configs_derives_exclude_paths_from_non_production_envs() {
+    write_release_config
+    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.staging) = {"aws_region": "ap-northeast-1"}' workflow-config.yaml
+    mkdir -p dystopia/monolith/infrastructure/aws/production
+    write_service_release_config dystopia/monolith monolith '["dystopia/monolith/infrastructure/aws/develop","dystopia/monolith/infrastructure/aws/staging","dystopia/monolith/infrastructure/aws/production"]'
+    assert_fails check_configs
+    assert_stderr_contains 'dystopia/monolith: exclude-paths must be ["dystopia/monolith/infrastructure/aws/develop","dystopia/monolith/infrastructure/aws/staging"]'
+    write_service_release_config dystopia/monolith monolith '["dystopia/monolith/infrastructure/aws/develop","dystopia/monolith/infrastructure/aws/staging"]'
     assert_eq "" "$(check_configs 2>&1)"
 }
 
@@ -341,17 +311,14 @@ stacks:
         aws_region: ap-northeast-1
         iam_role_plan: arn:aws:iam::111111111111:role/master-plan
         iam_role_apply: arn:aws:iam::111111111111:role/master-apply
-        apply_trigger: merge
       develop:
         aws_region: ap-northeast-1
         iam_role_plan: arn:aws:iam::333333333333:role/develop-plan
         iam_role_apply: arn:aws:iam::333333333333:role/develop-apply
-        apply_trigger: merge
       production:
         aws_region: ap-northeast-1
         iam_role_plan: arn:aws:iam::222222222222:role/production-plan
         iam_role_apply: arn:aws:iam::222222222222:role/production-apply
-        apply_trigger: release
 YAML
     mkdir -p aws/vpc/master aws/vpc/develop aws/vpc/production
 }
@@ -395,20 +362,6 @@ test_release_targets_all_reports_the_path_template() {
     local targets
     targets="$(bash "${script_dir}/release-targets.sh" --all)"
     assert_eq "aws/{service}/{environment} github/{service}/{environment}" "$(jq -r 'map(.pattern) | sort | join(" ")' <<<"${targets}")"
-}
-
-test_validate_apply_trigger_rejects_merge_production() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: terragrunt
-    environments:
-      develop:
-        apply_trigger: merge
-      production:
-        apply_trigger: merge
-YAML
-    assert_fails bash "${script_dir}/validate-apply-trigger.sh"
-    assert_stderr_contains "production"
 }
 
 failed=0

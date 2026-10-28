@@ -14,11 +14,15 @@ assert_eq() {
     fi
 }
 
-test_resolver_applies_only_merge_targets() {
-    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.apply_trigger == 'merge' && 'apply' || '')) || '' }}"
+test_resolver_applies_only_non_production_targets() {
+    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
     local actual
     actual="$(yq '.jobs["deploy-terragrunt"].with["action-type"]' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
     assert_eq "${expected}" "${actual}"
+}
+
+test_workflows_do_not_read_apply_trigger() {
+    assert_eq "" "$(grep -rl --exclude='*test.sh' 'apply_trigger\|validate-apply-trigger' "${workflows_dir}" "${repo_root}/scripts" || true)"
 }
 
 test_release_workflows_skip_empty_targets() {
@@ -31,6 +35,15 @@ test_release_deploy_declares_environment() {
     local workflow="${workflows_dir}/reusable--release--deploy.yaml"
     assert_eq '${{ matrix.target.environment }}' "$(yq '.jobs.apply.with["github-environment"]' "${workflow}")"
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
+}
+
+test_release_build_tags_the_release_tag() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    assert_eq '${{ needs.detect-component.outputs.tag }}' "$(yq '.jobs["container-build"].with["release-tag"]' "${build}")"
+    assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.jobs["detect-component"].outputs.tag' "${build}")"
+    assert_eq "" "$(yq '.on.workflow_call.inputs["release-tag"].default' "${builder}")"
+    grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
 }
 
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
