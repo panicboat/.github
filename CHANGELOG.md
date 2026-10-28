@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/panicboat/.github/compare/v3.1.1...v3.2.0) (2026-10-28)
+
+
+### Features
+
+* decide release environments by name and tag release images with the release tag ([#30](https://github.com/panicboat/.github/issues/30)) ([338a6ed](https://github.com/panicboat/.github/commit/338a6ed260d9675f9cc1eeae2434f9149df4ff85))
+
 ## [3.1.1](https://github.com/panicboat/.github/compare/v3.1.0...v3.1.1) (2026-10-27)
 
 
