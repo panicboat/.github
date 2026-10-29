@@ -1,4 +1,4 @@
-# Plans a service's production environment on its release-please pull request.
+# Plans a service's production environment and diffs its production kustomizations against the previous release on its release-please pull request.
 name: 'Reusable - Release - Plan'
 
 on:
@@ -22,6 +22,8 @@ jobs:
       contents: read
     outputs:
       targets: ${{ steps.resolve.outputs.targets }}
+      kustomizations: ${{ steps.resolve.outputs.kustomizations }}
+      previous-tag: ${{ steps.resolve.outputs.previous-tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +44,13 @@ jobs:
           set -euo pipefail
           service=$(bash .shared-workflows/scripts/terragrunt-release/release-service.sh --branch "$HEAD_REF")
           targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh "$service")
-          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          kustomizations=$(bash .shared-workflows/scripts/kustomize-release/release-kustomizations.sh "$service")
+          previous_tag=$(bash .shared-workflows/scripts/kustomize-release/previous-release-tag.sh "$service")
+          {
+            echo "targets=$targets"
+            echo "kustomizations=$kustomizations"
+            echo "previous-tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
 
   plan:
     name: 'Plan Release (${{ matrix.target.service }}:${{ matrix.target.environment }})'
@@ -60,6 +68,24 @@ jobs:
       iam-role: ${{ matrix.target.iam_role_plan }}
       aws-region: ${{ matrix.target.aws_region }}
       working-directory: ${{ matrix.target.working_directory }}
+      app-id: ${{ inputs.app-id }}
+    secrets:
+      private-key: ${{ secrets.private-key }}
+
+  kustomize-diff:
+    name: 'Kustomize Diff (${{ matrix.kustomization.service }}:${{ matrix.kustomization.environment }})'
+    needs: resolve
+    if: needs.resolve.outputs.kustomizations != '[]' && needs.resolve.outputs.previous-tag != ''
+    strategy:
+      matrix:
+        kustomization: ${{ fromJson(needs.resolve.outputs.kustomizations) }}
+      fail-fast: false
+    uses: $/.github/workflows/internal--kustomize-builder.yaml
+    with:
+      service-name: ${{ matrix.kustomization.service }}
+      environment: ${{ matrix.kustomization.environment }}
+      kustomization-directory: ${{ matrix.kustomization.kustomization_directory }}
+      base-ref: ${{ needs.resolve.outputs.previous-tag }}
       app-id: ${{ inputs.app-id }}
     secrets:
       private-key: ${{ secrets.private-key }}

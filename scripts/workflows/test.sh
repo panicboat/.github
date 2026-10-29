@@ -54,6 +54,22 @@ test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
     assert_eq '${{ inputs.ref }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout") | .with.ref' "${kustomize_builder}")"
 }
 
+test_kustomize_builder_diffs_against_the_base_ref_when_given() {
+    local kustomize_builder="${workflows_dir}/internal--kustomize-builder.yaml"
+    assert_eq "" "$(yq '.on.workflow_call.inputs["base-ref"].default' "${kustomize_builder}")"
+    assert_eq '${{ inputs.base-ref || github.event.pull_request.base.sha }}' "$(yq '.jobs["kustomize-diff"].steps[] | select(.name == "Checkout base ref") | .with.ref' "${kustomize_builder}")"
+}
+
+test_release_plan_diffs_kustomizations_against_the_previous_release() {
+    local plan="${workflows_dir}/reusable--release--plan.yaml"
+    assert_eq "needs.resolve.outputs.kustomizations != '[]' && needs.resolve.outputs.previous-tag != ''" "$(yq '.jobs["kustomize-diff"].if' "${plan}")"
+    assert_eq '$/.github/workflows/internal--kustomize-builder.yaml' "$(yq '.jobs["kustomize-diff"].uses' "${plan}")"
+    assert_eq '${{ needs.resolve.outputs.previous-tag }}' "$(yq '.jobs["kustomize-diff"].with["base-ref"]' "${plan}")"
+    assert_eq '${{ matrix.kustomization.kustomization_directory }}' "$(yq '.jobs["kustomize-diff"].with["kustomization-directory"]' "${plan}")"
+    assert_eq '${{ steps.resolve.outputs.kustomizations }}' "$(yq '.jobs.resolve.outputs.kustomizations' "${plan}")"
+    assert_eq '${{ steps.resolve.outputs.previous-tag }}' "$(yq '.jobs.resolve.outputs["previous-tag"]' "${plan}")"
+}
+
 test_nested_test_workflow_uses_dollar_slash() {
     local workflow="${workflows_dir}/self--test-shared-workflows--nested.yaml"
     assert_eq '$/.github/workflows/self--test-shared-workflows--checkout.yaml' "$(yq '.jobs[].uses' "${workflow}")"
