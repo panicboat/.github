@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/panicboat/.github/compare/v3.2.0...v3.3.0) (2026-10-29)
+
+
+### Features
+
+* diff the production kustomizations of a release against the previous release ([#32](https://github.com/panicboat/.github/issues/32)) ([42d9ab0](https://github.com/panicboat/.github/commit/42d9ab07b66ef9eb05b0c1b29f3e7ef4cfbc47cc))
+
 ## [3.2.0](https://github.com/panicboat/.github/compare/v3.1.1...v3.2.0) (2026-10-28)
 
 
