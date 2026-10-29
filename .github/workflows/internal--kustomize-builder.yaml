@@ -21,6 +21,11 @@ on:
         type: string
         default: ''
         description: 'Git ref to check out for the head manifests (empty uses the default ref of the triggering event)'
+      base-ref:
+        required: false
+        type: string
+        default: ''
+        description: 'Git ref to check out for the base manifests (empty uses the base commit of the pull request)'
       app-id:
         required: true
         type: string
@@ -61,7 +66,7 @@ jobs:
       - name: Checkout base ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ inputs.base-ref || github.event.pull_request.base.sha }}
           path: base
           token: ${{ steps.app-token.outputs.token }}
 
@@ -96,6 +101,7 @@ jobs:
 
             **Service**: `${{ inputs.service-name }}`
             **Environment**: `${{ inputs.environment }}`
+            ${{ inputs.base-ref != '' && format('**Compared with**: `{0}`', inputs.base-ref) || '' }}
 
             ${{ steps.diff.outputs.comment-body || 'No changes' }}
           comment-tag: "kubernetes-${{ inputs.service-name }}-${{ inputs.environment }}"
