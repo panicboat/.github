@@ -6,7 +6,7 @@
     ":separateMajorReleases",
     "group:monorepos",
     "group:recommended",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigestsToSemver"
   ],
   "semanticCommitScope": "{{packageFileDir}}",
   "timezone": "Asia/Tokyo",
