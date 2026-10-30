@@ -1,4 +1,4 @@
-# Resolves deploy labels into targets and runs each stack the caller's workflow config enables: terragrunt plan on pull requests and apply of non-production environments on push, container builds, and kustomize/helmfile diffs on pull requests.
+# Resolves deploy labels into targets and runs each target type the caller's workflow config enables: terragrunt plan on pull requests and apply of non-production environments on push, container builds, and kustomize/helmfile diffs on pull requests.
 name: 'Reusable - Label Base Deploy - Resolver'
 
 on:
