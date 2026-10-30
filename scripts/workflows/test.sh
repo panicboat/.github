@@ -15,10 +15,26 @@ assert_eq() {
 }
 
 test_resolver_applies_only_non_production_targets() {
-    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
+    local expected="\${{ matrix.target.type == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
     local actual
     actual="$(yq '.jobs["deploy-terragrunt"].with["action-type"]' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
     assert_eq "${expected}" "${actual}"
+}
+
+test_resolver_routes_targets_by_type() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local type
+    assert_eq "0" "$(grep -cF "contains(needs.resolve.outputs.targets, '\"stack\":" "${resolver}" || true)"
+    assert_eq "0" "$(grep -cF 'matrix.target.stack_id' "${resolver}" || true)"
+    for type in terragrunt container kustomize helmfile; do
+        grep -qF "contains(needs.resolve.outputs.targets, '\"type\":\"${type}\"')" "${resolver}" || { echo "  missing type route: ${type}" >&2; exit 1; }
+    done
+}
+
+test_label_base_deploy_uses_deploy_actions_v3_1_0() {
+    local sha="9c5aea836b982c12d283c4bea8fac965d7242eda"
+    assert_eq "panicboat/deploy-actions/label-dispatcher@${sha} # v3.1.0" "$(grep -o 'panicboat/deploy-actions/label-[a-z]*@.*' "${workflows_dir}/reusable--label-base-deploy--dispatcher.yaml")"
+    assert_eq "panicboat/deploy-actions/label-resolver@${sha} # v3.1.0" "$(grep -o 'panicboat/deploy-actions/label-[a-z]*@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
 }
 
 test_workflows_do_not_read_apply_trigger() {
