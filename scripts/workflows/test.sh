@@ -105,6 +105,41 @@ test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     done
 }
 
+test_release_config_check_uses_the_label_resolver() {
+    local workflow="${workflows_dir}/reusable--test-terragrunt-release.yaml"
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local steps='.jobs.validate.steps[]'
+    local pin step run work fixture
+    pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
+    [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+    assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+    assert_eq '{"contents":"read"}' "$(yq -o=json -I=0 '.jobs.validate.permissions' "${workflow}")"
+    assert_eq "1" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflow}")"
+
+    step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
+    assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+    assert_eq 'all' "$(yq '.with.service' <<<"${step}")"
+    assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+
+    step="$(yq "${steps} | select(.name == \"Check release-please configs\")" "${workflow}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq '${{ steps.resolver.outputs.candidates }}' "$(yq '.env.CANDIDATES' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    grep -qF 'check-release-configs.sh' <<<"${run}"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    fixture="${work}/caller"
+    mkdir -p "${fixture}/dystopia/monolith" "${work}/temp"
+    ln -s "${repo_root}" "${fixture}/.shared-workflows"
+    echo '{"packages":{"dystopia/monolith":{"component":"monolith"}}}' > "${fixture}/dystopia/monolith/release-please-config.json"
+    echo '{"dystopia/monolith":"0.1.0"}' > "${fixture}/dystopia/monolith/release-please-manifest.json"
+    git -C "${fixture}" init -q
+    git -C "${fixture}" add dystopia
+    (cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/monolith"}]' bash -c "${run}")
+    (cd "${fixture}" && ! RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>/dev/null)
+}
+
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
     local kustomize_builder="${workflows_dir}/internal--kustomize-builder.yaml"
