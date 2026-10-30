@@ -17,7 +17,9 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "include-component-in-tag": false
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     }
   }
 }
