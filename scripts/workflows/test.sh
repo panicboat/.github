@@ -23,18 +23,24 @@ test_resolver_applies_only_non_production_targets() {
 
 test_resolver_routes_targets_by_type() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
-    local type
+    local kind
     assert_eq "0" "$(grep -cF "contains(needs.resolve.outputs.targets, '\"stack\":" "${resolver}" || true)"
     assert_eq "0" "$(grep -cF 'matrix.target.stack_id' "${resolver}" || true)"
-    for type in terragrunt container kustomize helmfile; do
-        grep -qF "contains(needs.resolve.outputs.targets, '\"type\":\"${type}\"')" "${resolver}" || { echo "  missing type route: ${type}" >&2; exit 1; }
+    for kind in terragrunt container kustomize helmfile; do
+        grep -qF "contains(needs.resolve.outputs.targets, '\"type\":\"${kind}\"')" "${resolver}" || { echo "  missing type route: ${kind}" >&2; exit 1; }
     done
+    yq '.jobs["helmfile-targets-group"].steps[] | select(.id == "group") | .run' "${resolver}" | grep -qF 'select(.type == "helmfile")'
 }
 
-test_label_base_deploy_uses_deploy_actions_v3_1_0() {
-    local sha="9c5aea836b982c12d283c4bea8fac965d7242eda"
-    assert_eq "panicboat/deploy-actions/label-dispatcher@${sha} # v3.1.0" "$(grep -o 'panicboat/deploy-actions/label-[a-z]*@.*' "${workflows_dir}/reusable--label-base-deploy--dispatcher.yaml")"
-    assert_eq "panicboat/deploy-actions/label-resolver@${sha} # v3.1.0" "$(grep -o 'panicboat/deploy-actions/label-[a-z]*@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
+test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
+    local pin_pattern='^panicboat/deploy-actions/label-[a-z]+@([0-9a-f]{40}) # (v[0-9]+\.[0-9]+\.[0-9]+)$'
+    local name line pins=""
+    for name in dispatcher resolver; do
+        line="$(grep -o "panicboat/deploy-actions/label-${name}@.*" "${workflows_dir}/reusable--label-base-deploy--${name}.yaml")"
+        [[ "${line}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${line}" >&2; exit 1; }
+        pins+="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"$'\n'
+    done
+    assert_eq "1" "$(sort -u <<<"${pins}" | grep -c .)"
 }
 
 test_workflows_do_not_read_apply_trigger() {
