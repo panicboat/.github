@@ -34,5 +34,6 @@ jobs:
         env:
           CANDIDATES: ${{ steps.resolver.outputs.candidates }}
         run: |
+          set -euo pipefail
           printf '%s\n' "${CANDIDATES}" > "${RUNNER_TEMP}/candidates.json"
           bash .shared-workflows/scripts/terragrunt-release/check-release-configs.sh "${RUNNER_TEMP}/candidates.json"
