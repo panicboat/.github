@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/panicboat/.github/compare/v3.3.0...v3.4.0) (2026-10-30)
+
+
+### Features
+
+* pin GitHub Action digests with full semver version comments ([#34](https://github.com/panicboat/.github/issues/34)) ([c539cb4](https://github.com/panicboat/.github/commit/c539cb49776d990b55b207c16f2bbabd81a96b8f))
+
 ## [3.3.0](https://github.com/panicboat/.github/compare/v3.2.0...v3.3.0) (2026-10-29)
 
 
