@@ -168,7 +168,7 @@ test_release_config_check_uses_the_label_resolver() {
     local workflow="${workflows_dir}/reusable--test-terragrunt-release.yaml"
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
     local steps='.jobs.validate.steps[]'
-    local pin step run work fixture
+    local pin step run work fixture status stderr
     pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
     [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
     assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
@@ -196,7 +196,10 @@ test_release_config_check_uses_the_label_resolver() {
     git -C "${fixture}" init -q
     git -C "${fixture}" add dystopia
     (cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/monolith"},{"target":{"service":"monolith","environment":"develop","stack":"terragrunt","working_directory":"dystopia/monolith/develop","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/develop-only"}]' bash -c "${run}")
-    (cd "${fixture}" && ! RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>/dev/null)
+    status=0
+    stderr="$(cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>&1 >/dev/null)" || status=$?
+    assert_eq "1" "${status}"
+    grep -qF 'system-components/pennyworth/release-please-config.json' <<<"${stderr}" || { echo "  stderr does not name the missing config: ${stderr}" >&2; exit 1; }
 }
 
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
