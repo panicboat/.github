@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/panicboat/.github/compare/v0.1.2...v0.2.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the release config check ([#44](https://github.com/panicboat/.github/issues/44))
+
+### Features
+
+* remove the release config check ([#44](https://github.com/panicboat/.github/issues/44)) ([cf6babf](https://github.com/panicboat/.github/commit/cf6babff77e1895eb46e3c9ee6a6fba607f163d8))
+
 ## [0.1.2](https://github.com/panicboat/.github/compare/v0.1.1...v0.1.2) (2026-10-30)
 
 
