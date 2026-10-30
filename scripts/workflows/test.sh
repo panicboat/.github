@@ -62,7 +62,7 @@ test_release_deploy_declares_environment() {
 test_release_workflows_resolve_with_the_label_resolver() {
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
     local steps='.jobs.resolve.steps[]'
-    local targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},{"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},{"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"}]'
+    local targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},{"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},{"service":"monolith","environment":"develop","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/develop","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},{"service":"monolith","environment":"develop","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/develop","type":"kustomize"},{"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"}]'
     local terragrunt_targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"}]'
     local kustomizations='[{"service":"monolith","environment":"production","kustomization_directory":"dystopia/monolith/kubernetes/overlays/production"}]'
     local name workflow pin step run work
@@ -85,7 +85,7 @@ test_release_workflows_resolve_with_the_label_resolver() {
         step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
         assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
         assert_eq '${{ steps.service.outputs.service }}' "$(yq '.with.service' <<<"${step}")"
-        assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+        assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
 
         step="$(yq "${steps} | select(.id == \"service\")" "${workflow}")"
         run="$(yq '.run' <<<"${step}")"
@@ -168,7 +168,7 @@ test_release_config_check_uses_the_label_resolver() {
     local workflow="${workflows_dir}/reusable--test-terragrunt-release.yaml"
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
     local steps='.jobs.validate.steps[]'
-    local pin step run work fixture
+    local pin step run work fixture status stderr
     pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
     [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
     assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
@@ -178,7 +178,7 @@ test_release_config_check_uses_the_label_resolver() {
     step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
     assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
     assert_eq 'all' "$(yq '.with.service' <<<"${step}")"
-    assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+    assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
 
     step="$(yq "${steps} | select(.name == \"Check release-please configs\")" "${workflow}")"
     run="$(yq '.run' <<<"${step}")"
@@ -195,8 +195,11 @@ test_release_config_check_uses_the_label_resolver() {
     echo '{"dystopia/monolith":"0.1.0"}' > "${fixture}/dystopia/monolith/release-please-manifest.json"
     git -C "${fixture}" init -q
     git -C "${fixture}" add dystopia
-    (cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/monolith"}]' bash -c "${run}")
-    (cd "${fixture}" && ! RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>/dev/null)
+    (cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/monolith"},{"target":{"service":"monolith","environment":"develop","stack":"terragrunt","working_directory":"dystopia/monolith/develop","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/develop-only"}]' bash -c "${run}")
+    status=0
+    stderr="$(cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>&1 >/dev/null)" || status=$?
+    assert_eq "1" "${status}"
+    grep -qF 'system-components/pennyworth/release-please-config.json' <<<"${stderr}" || { echo "  stderr does not name the missing config: ${stderr}" >&2; exit 1; }
 }
 
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {

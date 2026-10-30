@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-candidates_path="${1:?usage: check-release-configs.sh <candidates_json_path>}"
+if [ "$#" -ne 1 ]; then
+    echo "::error::usage: check-release-configs.sh <candidates_json_path>" >&2
+    exit 1
+fi
+candidates_path="$1"
 
 failed=0
 
@@ -10,8 +14,8 @@ report() {
     failed=1
 }
 
-if ! jq -e 'type == "array"' "${candidates_path}" >/dev/null 2>&1; then
-    echo "::error::${candidates_path} must hold the label resolver candidates as a JSON array" >&2
+if ! jq -e 'type == "array" and all(.[]; type == "object" and (.target | type == "object"))' "${candidates_path}" >/dev/null 2>&1; then
+    echo "::error::${candidates_path} must hold the label resolver candidates as a JSON array of objects with a target object" >&2
     exit 1
 fi
 
