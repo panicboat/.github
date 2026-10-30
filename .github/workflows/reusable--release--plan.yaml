@@ -51,7 +51,6 @@ jobs:
         with:
           repository: ${{ github.repository }}
           service: ${{ steps.service.outputs.service }}
-          environments: production
 
       - name: Resolve release targets
         id: resolve
