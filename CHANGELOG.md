@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/panicboat/.github/compare/v3.4.0...v4.0.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* consume deploy-actions v3.1.0 targets in label base deploy and release workflows ([#36](https://github.com/panicboat/.github/issues/36))
+
+### Features
+
+* consume deploy-actions v3.1.0 targets in label base deploy and release workflows ([#36](https://github.com/panicboat/.github/issues/36)) ([7c2ebaa](https://github.com/panicboat/.github/commit/7c2ebaa132ce857a6bb3886c11467d835c2da0f5))
+
 ## [3.4.0](https://github.com/panicboat/.github/compare/v3.3.0...v3.4.0) (2026-10-30)
 
 
