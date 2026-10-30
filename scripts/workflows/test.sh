@@ -15,10 +15,32 @@ assert_eq() {
 }
 
 test_resolver_applies_only_non_production_targets() {
-    local expected="\${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
+    local expected="\${{ matrix.target.type == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}"
     local actual
     actual="$(yq '.jobs["deploy-terragrunt"].with["action-type"]' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")"
     assert_eq "${expected}" "${actual}"
+}
+
+test_resolver_routes_targets_by_type() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local kind
+    assert_eq "0" "$(grep -cF "contains(needs.resolve.outputs.targets, '\"stack\":" "${resolver}" || true)"
+    assert_eq "0" "$(grep -cF 'matrix.target.stack_id' "${resolver}" || true)"
+    for kind in terragrunt container kustomize helmfile; do
+        grep -qF "contains(needs.resolve.outputs.targets, '\"type\":\"${kind}\"')" "${resolver}" || { echo "  missing type route: ${kind}" >&2; exit 1; }
+    done
+    yq '.jobs["helmfile-targets-group"].steps[] | select(.id == "group") | .run' "${resolver}" | grep -qF 'select(.type == "helmfile")'
+}
+
+test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
+    local pin_pattern='^panicboat/deploy-actions/label-[a-z]+@([0-9a-f]{40}) # (v[0-9]+\.[0-9]+\.[0-9]+)$'
+    local name line pins=""
+    for name in dispatcher resolver; do
+        line="$(grep -o "panicboat/deploy-actions/label-${name}@.*" "${workflows_dir}/reusable--label-base-deploy--${name}.yaml")"
+        [[ "${line}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${line}" >&2; exit 1; }
+        pins+="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"$'\n'
+    done
+    assert_eq "1" "$(sort -u <<<"${pins}" | grep -c .)"
 }
 
 test_workflows_do_not_read_apply_trigger() {
@@ -37,6 +59,65 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
+test_release_workflows_resolve_with_the_label_resolver() {
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local steps='.jobs.resolve.steps[]'
+    local targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},{"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},{"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"}]'
+    local terragrunt_targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"}]'
+    local kustomizations='[{"service":"monolith","environment":"production","kustomization_directory":"dystopia/monolith/kubernetes/overlays/production"}]'
+    local name workflow pin step run work
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    git init -q --bare "${work}/origin.git"
+    git init -q "${work}/plan"
+    git -C "${work}/plan" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+    git -C "${work}/plan" tag monolith-v1.2.3
+    git -C "${work}/plan" remote add origin "${work}/origin.git"
+    git -C "${work}/plan" push -q origin --tags
+    mkdir "${work}/deploy"
+    for name in plan deploy; do
+        workflow="${workflows_dir}/reusable--release--${name}.yaml"
+        pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
+        [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+        assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+        ln -s "${repo_root}" "${work}/${name}/.shared-workflows"
+
+        step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
+        assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+        assert_eq '${{ steps.service.outputs.service }}' "$(yq '.with.service' <<<"${step}")"
+        assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+
+        step="$(yq "${steps} | select(.id == \"service\")" "${workflow}")"
+        run="$(yq '.run' <<<"${step}")"
+        assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+        if [ "${name}" = plan ]; then
+            (cd "${work}/plan" && GITHUB_OUTPUT="${work}/plan-service" HEAD_REF=release-please--branches--main--components--monolith bash -c "${run}")
+            assert_eq "service=monolith" "$(cat "${work}/plan-service")"
+        else
+            (cd "${work}/deploy" && GITHUB_OUTPUT="${work}/deploy-service" TAG=monolith-v1.2.3 bash -c "${run}")
+            assert_eq "service=monolith" "$(cat "${work}/deploy-service")"
+        fi
+
+        step="$(yq "${steps} | select(.id == \"resolve\")" "${workflow}")"
+        run="$(yq '.run' <<<"${step}")"
+        assert_eq '${{ steps.resolver.outputs.targets }}' "$(yq '.env.TARGETS' <<<"${step}")"
+        assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+        if [ "${name}" = plan ]; then
+            assert_eq '${{ steps.service.outputs.service }}' "$(yq '.env.SERVICE' <<<"${step}")"
+            (cd "${work}/plan" && GITHUB_OUTPUT="${work}/plan-resolve" SERVICE=monolith TARGETS="${targets}" bash -c "${run}")
+            assert_eq "$(printf 'targets=%s\nkustomizations=%s\nprevious-tag=monolith-v1.2.3' "${terragrunt_targets}" "${kustomizations}")" "$(cat "${work}/plan-resolve")"
+        else
+            (cd "${work}/deploy" && GITHUB_OUTPUT="${work}/deploy-resolve" TAG=monolith-v1.2.3 TARGETS="${targets}" bash -c "${run}")
+            assert_eq "$(printf 'targets=%s\ntag=monolith-v1.2.3' "${terragrunt_targets}")" "$(cat "${work}/deploy-resolve")"
+        fi
+    done
+
+    assert_eq 'null' "$(yq "${steps} | select(.id == \"resolver\") | .with.ref" "${workflows_dir}/reusable--release--plan.yaml")"
+    assert_eq '${{ env.TAG }}' "$(yq "${steps} | select(.id == \"resolver\") | .with.ref" "${workflows_dir}/reusable--release--deploy.yaml")"
+    assert_eq "1" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflows_dir}/reusable--release--plan.yaml")"
+    assert_eq "0" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflows_dir}/reusable--release--deploy.yaml")"
+}
+
 test_release_build_tags_the_release_tag() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local builder="${workflows_dir}/internal--image-builder.yaml"
@@ -44,6 +125,78 @@ test_release_build_tags_the_release_tag() {
     assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.jobs["detect-component"].outputs.tag' "${build}")"
     assert_eq "" "$(yq '.on.workflow_call.inputs["release-tag"].default' "${builder}")"
     grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
+}
+
+test_release_build_resolves_the_container_directory_with_the_label_resolver() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local job='.jobs["detect-component"]'
+    local pin step run work status out targets
+    pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${build}")"
+    [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+    assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+    step="$(yq "${job}.steps[] | select(.id == \"resolver\")" "${build}")"
+    assert_eq '${{ steps.parse.outputs.service }}' "$(yq '.with.service' <<<"${step}")"
+    assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.with.ref' <<<"${step}")"
+    assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+    assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
+    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
+
+    step="$(yq "${job}.steps[] | select(.id == \"resolve-dir\")" "${build}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq '${{ steps.resolver.outputs.targets }}' "$(yq '.env.TARGETS' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -cw 'yq' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -v '::error::' <<<"${run}" | grep -c 'workflow-config.yaml' || true)"
+    grep -qF 'select(.type == "container")' <<<"${run}"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    targets='[{"service":"api","environment":"develop","stack":"terragrunt","working_directory":"terragrunt/api/develop","type":"terragrunt"},{"service":"web","stack":"container","working_directory":"services/web","type":"container"},{"service":"api","stack":"container","working_directory":"services/api","type":"container"}]'
+    GITHUB_OUTPUT="${work}/output" SERVICE=api TARGETS="${targets}" bash -c "${run}"
+    assert_eq "working-directory=services/api" "$(cat "${work}/output")"
+    for targets in "${targets}" '[]'; do
+        status=0
+        out="$(GITHUB_OUTPUT="${work}/none" SERVICE=billing TARGETS="${targets}" bash -c "${run}")" || status=$?
+        assert_eq "1" "${status}"
+        assert_eq "::error::No directory found for service 'billing' among the container targets of workflow-config.yaml" "${out}"
+        [ ! -e "${work}/none" ]
+    done
+}
+
+test_release_config_check_uses_the_label_resolver() {
+    local workflow="${workflows_dir}/reusable--test-terragrunt-release.yaml"
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local steps='.jobs.validate.steps[]'
+    local pin step run work fixture
+    pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
+    [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+    assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+    assert_eq '{"contents":"read"}' "$(yq -o=json -I=0 '.jobs.validate.permissions' "${workflow}")"
+    assert_eq "1" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflow}")"
+
+    step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
+    assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+    assert_eq 'all' "$(yq '.with.service' <<<"${step}")"
+    assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+
+    step="$(yq "${steps} | select(.name == \"Check release-please configs\")" "${workflow}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq '${{ steps.resolver.outputs.candidates }}' "$(yq '.env.CANDIDATES' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    grep -qF 'check-release-configs.sh' <<<"${run}"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    fixture="${work}/caller"
+    mkdir -p "${fixture}/dystopia/monolith" "${work}/temp"
+    ln -s "${repo_root}" "${fixture}/.shared-workflows"
+    echo '{"packages":{"dystopia/monolith":{"component":"monolith"}}}' > "${fixture}/dystopia/monolith/release-please-config.json"
+    echo '{"dystopia/monolith":"0.1.0"}' > "${fixture}/dystopia/monolith/release-please-manifest.json"
+    git -C "${fixture}" init -q
+    git -C "${fixture}" add dystopia
+    (cd "${fixture}" && RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},"excluded":false,"root":"dystopia/monolith"}]' bash -c "${run}")
+    (cd "${fixture}" && ! RUNNER_TEMP="${work}/temp" CANDIDATES='[{"target":{"service":"pennyworth","environment":"production","stack":"terragrunt","working_directory":"p/production","type":"terragrunt","aws_region":"r","iam_role_plan":"p","iam_role_apply":"a"},"excluded":true,"root":"system-components/pennyworth"}]' bash -c "${run}" 2>/dev/null)
 }
 
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {

@@ -22,5 +22,18 @@ jobs:
           path: .shared-workflows
           persist-credentials: false
 
+      - name: Resolve release candidates
+        id: resolver
+        uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v3.1.0
+        with:
+          repository: ${{ github.repository }}
+          service: all
+          environments: production
+
       - name: Check release-please configs
-        run: bash .shared-workflows/scripts/terragrunt-release/check-release-configs.sh
+        env:
+          CANDIDATES: ${{ steps.resolver.outputs.candidates }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${CANDIDATES}" > "${RUNNER_TEMP}/candidates.json"
+          bash .shared-workflows/scripts/terragrunt-release/check-release-configs.sh "${RUNNER_TEMP}/candidates.json"

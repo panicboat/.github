@@ -1,4 +1,4 @@
-# Resolves deploy labels into targets and runs each stack the caller's workflow config enables: terragrunt plan on pull requests and apply of non-production environments on push, container builds, and kustomize/helmfile diffs on pull requests.
+# Resolves deploy labels into targets and runs each target type the caller's workflow config enables: terragrunt plan on pull requests and apply of non-production environments on push, container builds, and kustomize/helmfile diffs on pull requests.
 name: 'Reusable - Label Base Deploy - Resolver'
 
 on:
@@ -47,7 +47,7 @@ jobs:
 
       - name: Label Resolver
         id: resolver
-        uses: panicboat/deploy-actions/label-resolver@1ab520e5ef33b8d744982762ffc4e08009a34744 # v2.0.1
+        uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v3.1.0
         with:
           repository: ${{ github.repository }}
           pr-number: ${{ steps.pr-info.outputs.number }}
@@ -59,7 +59,7 @@ jobs:
     needs: resolve
     if: |
       needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"stack":"terragrunt"')
+      contains(needs.resolve.outputs.targets, '"type":"terragrunt"')
     strategy:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
@@ -68,7 +68,7 @@ jobs:
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
-      action-type: ${{ matrix.target.stack == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}
+      action-type: ${{ matrix.target.type == 'terragrunt' && (github.event_name == 'pull_request' && 'plan' || (matrix.target.environment != 'production' && 'apply' || '')) || '' }}
       iam-role: ${{ github.event_name == 'pull_request' && matrix.target.iam_role_plan || matrix.target.iam_role_apply }}
       aws-region: ${{ matrix.target.aws_region }}
       working-directory: ${{ matrix.target.working_directory }}
@@ -81,17 +81,17 @@ jobs:
     needs: resolve
     if: |
       needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"stack":"container"')
+      contains(needs.resolve.outputs.targets, '"type":"container"')
     strategy:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
       fail-fast: false
     concurrency:
-      group: image-build-${{ matrix.target.stack_id }}-${{ matrix.target.service }}-${{ github.sha }}
+      group: image-build-${{ matrix.target.stack }}-${{ matrix.target.service }}-${{ github.sha }}
       cancel-in-progress: false
     uses: $/.github/workflows/internal--image-builder.yaml
     with:
-      image-name: ${{ matrix.target.stack == 'container' && matrix.target.service || '' }}
+      image-name: ${{ matrix.target.type == 'container' && matrix.target.service || '' }}
       working-directory: ${{ matrix.target.working_directory }}
       app-id: ${{ inputs.app-id }}
     secrets:
@@ -103,7 +103,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"stack":"kustomize"')
+      contains(needs.resolve.outputs.targets, '"type":"kustomize"')
     strategy:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
@@ -112,7 +112,7 @@ jobs:
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
-      kustomization-directory: ${{ matrix.target.stack == 'kustomize' && matrix.target.working_directory || '' }}
+      kustomization-directory: ${{ matrix.target.type == 'kustomize' && matrix.target.working_directory || '' }}
       app-id: ${{ inputs.app-id }}
     secrets:
       private-key: ${{ secrets.private-key }}
@@ -122,7 +122,7 @@ jobs:
     needs: resolve
     if: |
       needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"stack":"helmfile"')
+      contains(needs.resolve.outputs.targets, '"type":"helmfile"')
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.group.outputs.environments }}
@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           grouped=$(echo "$TARGETS" | jq -c '
-            [.[] | select(.stack == "helmfile")]
+            [.[] | select(.type == "helmfile")]
             | group_by(.environment)
             | map({environment: .[0].environment, services: [.[].service]})
           ')
@@ -161,7 +161,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' &&
       needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"stack":"helmfile"')
+      contains(needs.resolve.outputs.targets, '"type":"helmfile"')
     strategy:
       matrix:
         target: ${{ fromJson(needs.resolve.outputs.targets) }}
@@ -170,7 +170,7 @@ jobs:
     with:
       service-name: ${{ matrix.target.service }}
       environment: ${{ matrix.target.environment }}
-      kustomization-directory: ${{ matrix.target.stack == 'helmfile' && format('kubernetes/manifests/{0}/{1}', matrix.target.environment, matrix.target.service) || '' }}
+      kustomization-directory: ${{ matrix.target.type == 'helmfile' && format('kubernetes/manifests/{0}/{1}', matrix.target.environment, matrix.target.service) || '' }}
       # The hydrate job commits to the pull request branch, which the default merge ref does not contain.
       ref: ${{ github.head_ref }}
       app-id: ${{ inputs.app-id }}

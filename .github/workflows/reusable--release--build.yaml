@@ -40,24 +40,27 @@ jobs:
             echo "version=$VERSION"
             echo "tag=$TAG"
           } >> "$GITHUB_OUTPUT"
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Container targets carry no environment, so environments is not passed.
+      - name: Resolve container target
+        id: resolver
+        uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v3.1.0
+        with:
+          repository: ${{ github.repository }}
+          service: ${{ steps.parse.outputs.service }}
+          ref: ${{ steps.parse.outputs.tag }}
       - name: Resolve working directory
         id: resolve-dir
         env:
           SERVICE: ${{ steps.parse.outputs.service }}
+          TARGETS: ${{ steps.resolver.outputs.targets }}
         run: |
           set -euo pipefail
-          # Use workflow-config.yaml as the source of truth for deployable stacks.
-          while IFS= read -r path_pattern; do
-            dir="${path_pattern//\{service\}/$SERVICE}"
-            if [ -d "$dir" ]; then
-              echo "working-directory=$dir" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done < <(yq -r '.stacks[] | select(.name == "container") | .paths[]' workflow-config.yaml)
-          echo "::error::No directory found for service '$SERVICE' under any container stack path in workflow-config.yaml"
-          exit 1
+          dir=$(jq -r --arg service "$SERVICE" 'first(.[] | select(.type == "container") | select(.service == $service)) | .working_directory' <<<"$TARGETS")
+          if [ -z "$dir" ]; then
+            echo "::error::No directory found for service '$SERVICE' among the container targets of workflow-config.yaml"
+            exit 1
+          fi
+          echo "working-directory=$dir" >> "$GITHUB_OUTPUT"
 
   container-build:
     needs: detect-component
