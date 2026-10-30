@@ -68,6 +68,43 @@ test_release_build_tags_the_release_tag() {
     grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
 }
 
+test_release_build_resolves_the_container_directory_with_the_label_resolver() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local job='.jobs["detect-component"]'
+    local pin step run work status out targets
+    pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${build}")"
+    [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+    assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+    step="$(yq "${job}.steps[] | select(.id == \"resolver\")" "${build}")"
+    assert_eq '${{ steps.parse.outputs.service }}' "$(yq '.with.service' <<<"${step}")"
+    assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.with.ref' <<<"${step}")"
+    assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+    assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
+    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
+
+    step="$(yq "${job}.steps[] | select(.id == \"resolve-dir\")" "${build}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq '${{ steps.resolver.outputs.targets }}' "$(yq '.env.TARGETS' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -cw 'yq' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -v '::error::' <<<"${run}" | grep -c 'workflow-config.yaml' || true)"
+    grep -qF 'select(.type == "container")' <<<"${run}"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    targets='[{"service":"api","environment":"develop","stack":"terragrunt","working_directory":"terragrunt/api/develop","type":"terragrunt"},{"service":"web","stack":"container","working_directory":"services/web","type":"container"},{"service":"api","stack":"container","working_directory":"services/api","type":"container"}]'
+    GITHUB_OUTPUT="${work}/output" SERVICE=api TARGETS="${targets}" bash -c "${run}"
+    assert_eq "working-directory=services/api" "$(cat "${work}/output")"
+    for targets in "${targets}" '[]'; do
+        status=0
+        out="$(GITHUB_OUTPUT="${work}/none" SERVICE=billing TARGETS="${targets}" bash -c "${run}")" || status=$?
+        assert_eq "1" "${status}"
+        assert_eq "::error::No directory found for service 'billing' among the container targets of workflow-config.yaml" "${out}"
+        [ ! -e "${work}/none" ]
+    done
+}
+
 test_kustomize_builder_checks_out_head_ref_only_for_helmfile() {
     local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
     local kustomize_builder="${workflows_dir}/internal--kustomize-builder.yaml"
