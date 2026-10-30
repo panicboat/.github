@@ -45,8 +45,10 @@ jobs:
           state: all
         continue-on-error: true
 
+      # Flux pushes image updates to main with no pull request, and the action rejects an empty pr-number.
       - name: Label Resolver
         id: resolver
+        if: steps.pr-info.outputs.number != ''
         uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v0.1.0
         with:
           repository: ${{ github.repository }}

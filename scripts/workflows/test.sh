@@ -43,6 +43,12 @@ test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
     assert_eq "1" "$(sort -u <<<"${pins}" | grep -c .)"
 }
 
+test_resolver_skips_label_resolver_without_a_pull_request() {
+    local workflow="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq "steps.pr-info.outputs.number != ''" "$(yq '.jobs.resolve.steps[] | select(.id == "resolver") | .if' "${workflow}")"
+    assert_eq "needs.resolve.outputs.has-targets == 'true' &&" "$(yq '.jobs["deploy-terragrunt"].if' "${workflow}" | head -n 1)"
+}
+
 test_workflows_do_not_read_apply_trigger() {
     assert_eq "" "$(grep -rl --exclude='*test.sh' 'apply_trigger\|validate-apply-trigger' "${workflows_dir}" "${repo_root}/scripts" || true)"
 }
