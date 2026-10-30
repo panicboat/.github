@@ -59,6 +59,65 @@ test_release_deploy_declares_environment() {
     assert_eq '${{ needs.resolve.outputs.tag }}' "$(yq '.jobs.apply.with.ref' "${workflow}")"
 }
 
+test_release_workflows_resolve_with_the_label_resolver() {
+    local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
+    local steps='.jobs.resolve.steps[]'
+    local targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"},{"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},{"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"}]'
+    local terragrunt_targets='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"p","iam_role_apply":"a"}]'
+    local kustomizations='[{"service":"monolith","environment":"production","kustomization_directory":"dystopia/monolith/kubernetes/overlays/production"}]'
+    local name workflow pin step run work
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    git init -q --bare "${work}/origin.git"
+    git init -q "${work}/plan"
+    git -C "${work}/plan" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+    git -C "${work}/plan" tag monolith-v1.2.3
+    git -C "${work}/plan" remote add origin "${work}/origin.git"
+    git -C "${work}/plan" push -q origin --tags
+    mkdir "${work}/deploy"
+    for name in plan deploy; do
+        workflow="${workflows_dir}/reusable--release--${name}.yaml"
+        pin="$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflow}")"
+        [[ "${pin}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${pin}" >&2; exit 1; }
+        assert_eq "$(grep -o 'panicboat/deploy-actions/label-resolver@.*' "${workflows_dir}/reusable--label-base-deploy--resolver.yaml")" "${pin}"
+        ln -s "${repo_root}" "${work}/${name}/.shared-workflows"
+
+        step="$(yq "${steps} | select(.id == \"resolver\")" "${workflow}")"
+        assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
+        assert_eq '${{ steps.service.outputs.service }}' "$(yq '.with.service' <<<"${step}")"
+        assert_eq 'production' "$(yq '.with.environments' <<<"${step}")"
+
+        step="$(yq "${steps} | select(.id == \"service\")" "${workflow}")"
+        run="$(yq '.run' <<<"${step}")"
+        assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+        if [ "${name}" = plan ]; then
+            (cd "${work}/plan" && GITHUB_OUTPUT="${work}/plan-service" HEAD_REF=release-please--branches--main--components--monolith bash -c "${run}")
+            assert_eq "service=monolith" "$(cat "${work}/plan-service")"
+        else
+            (cd "${work}/deploy" && GITHUB_OUTPUT="${work}/deploy-service" TAG=monolith-v1.2.3 bash -c "${run}")
+            assert_eq "service=monolith" "$(cat "${work}/deploy-service")"
+        fi
+
+        step="$(yq "${steps} | select(.id == \"resolve\")" "${workflow}")"
+        run="$(yq '.run' <<<"${step}")"
+        assert_eq '${{ steps.resolver.outputs.targets }}' "$(yq '.env.TARGETS' <<<"${step}")"
+        assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+        if [ "${name}" = plan ]; then
+            assert_eq '${{ steps.service.outputs.service }}' "$(yq '.env.SERVICE' <<<"${step}")"
+            (cd "${work}/plan" && GITHUB_OUTPUT="${work}/plan-resolve" SERVICE=monolith TARGETS="${targets}" bash -c "${run}")
+            assert_eq "$(printf 'targets=%s\nkustomizations=%s\nprevious-tag=monolith-v1.2.3' "${terragrunt_targets}" "${kustomizations}")" "$(cat "${work}/plan-resolve")"
+        else
+            (cd "${work}/deploy" && GITHUB_OUTPUT="${work}/deploy-resolve" TAG=monolith-v1.2.3 TARGETS="${targets}" bash -c "${run}")
+            assert_eq "$(printf 'targets=%s\ntag=monolith-v1.2.3' "${terragrunt_targets}")" "$(cat "${work}/deploy-resolve")"
+        fi
+    done
+
+    assert_eq 'null' "$(yq "${steps} | select(.id == \"resolver\") | .with.ref" "${workflows_dir}/reusable--release--plan.yaml")"
+    assert_eq '${{ env.TAG }}' "$(yq "${steps} | select(.id == \"resolver\") | .with.ref" "${workflows_dir}/reusable--release--deploy.yaml")"
+    assert_eq "1" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflows_dir}/reusable--release--plan.yaml")"
+    assert_eq "0" "$(yq "[${steps} | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${workflows_dir}/reusable--release--deploy.yaml")"
+}
+
 test_release_build_tags_the_release_tag() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local builder="${workflows_dir}/internal--image-builder.yaml"

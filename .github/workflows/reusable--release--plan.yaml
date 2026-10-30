@@ -36,16 +36,33 @@ jobs:
           path: .shared-workflows
           persist-credentials: false
 
-      - name: Resolve release targets
-        id: resolve
+      - name: Parse release service
+        id: service
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           service=$(bash .shared-workflows/scripts/terragrunt-release/release-service.sh --branch "$HEAD_REF")
-          targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh "$service")
-          kustomizations=$(bash .shared-workflows/scripts/kustomize-release/release-kustomizations.sh "$service")
-          previous_tag=$(bash .shared-workflows/scripts/kustomize-release/previous-release-tag.sh "$service")
+          echo "service=$service" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve service targets
+        id: resolver
+        uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v3.1.0
+        with:
+          repository: ${{ github.repository }}
+          service: ${{ steps.service.outputs.service }}
+          environments: production
+
+      - name: Resolve release targets
+        id: resolve
+        env:
+          SERVICE: ${{ steps.service.outputs.service }}
+          TARGETS: ${{ steps.resolver.outputs.targets }}
+        run: |
+          set -euo pipefail
+          targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh <<<"$TARGETS")
+          kustomizations=$(bash .shared-workflows/scripts/kustomize-release/release-kustomizations.sh <<<"$TARGETS")
+          previous_tag=$(bash .shared-workflows/scripts/kustomize-release/previous-release-tag.sh "$SERVICE")
           {
             echo "targets=$targets"
             echo "kustomizations=$kustomizations"

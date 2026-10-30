@@ -63,95 +63,20 @@ test_release_service_error_is_single_line() {
     assert_eq "1" "$(printf '%s\n' "${last_stderr}" | wc -l | tr -d ' ')"
 }
 
-write_release_config() {
-    local exclude="${1:-}"
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: container
-    paths:
-      - "dystopia/{service}"
-      - "system-components/{service}"
-  - name: terragrunt
-    paths:
-      - "{product}/{service}/infrastructure/aws/{environment}"
-    environments:
-      develop:
-        aws_region: ap-northeast-1
-        iam_role_plan: arn:aws:iam::111111111111:role/develop-plan
-        iam_role_apply: arn:aws:iam::111111111111:role/develop-apply
-      production:
-        aws_region: ap-northeast-1
-        iam_role_plan: arn:aws:iam::222222222222:role/production-plan
-        iam_role_apply: arn:aws:iam::222222222222:role/production-apply
-  - name: kubernetes
-    paths:
-      - "{product}/{service}/kubernetes/overlays/{environment}"
-YAML
-    if [ -n "${exclude}" ]; then
-        EXCLUDE="${exclude}" yq -i '(.stacks[] | select(.name == "terragrunt") | .exclude) = env(EXCLUDE)' workflow-config.yaml
-    fi
+resolver_targets='[
+    {"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"arn:aws:iam::222222222222:role/production-plan","iam_role_apply":"arn:aws:iam::222222222222:role/production-apply"},
+    {"service":"monolith","environment":"develop","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/develop","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"arn:aws:iam::111111111111:role/develop-plan","iam_role_apply":"arn:aws:iam::111111111111:role/develop-apply"},
+    {"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"},
+    {"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"}
+]'
+
+test_release_targets_keeps_production_terragrunt_targets() {
+    local expected='[{"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1","iam_role_plan":"arn:aws:iam::222222222222:role/production-plan","iam_role_apply":"arn:aws:iam::222222222222:role/production-apply"}]'
+    assert_eq "${expected}" "$(bash "${script_dir}/release-targets.sh" <<<"${resolver_targets}")"
 }
 
-test_release_targets_lists_release_envs() {
-    write_release_config
-    mkdir -p dystopia/monolith/infrastructure/aws/develop dystopia/monolith/infrastructure/aws/production
-    local expected='[{"service":"monolith","environment":"production","working_directory":"dystopia/monolith/infrastructure/aws/production","aws_region":"ap-northeast-1","iam_role_plan":"arn:aws:iam::222222222222:role/production-plan","iam_role_apply":"arn:aws:iam::222222222222:role/production-apply"}]'
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
-    assert_eq "${expected}" "${targets}"
-}
-
-test_release_targets_treats_only_production_as_release() {
-    write_release_config
-    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.staging) = {"aws_region": "ap-northeast-1"}' workflow-config.yaml
-    mkdir -p dystopia/monolith/infrastructure/aws/{develop,staging,production}
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
-    assert_eq "production" "$(jq -r 'map(.environment) | join(" ")' <<<"${targets}")"
-}
-
-test_release_targets_ignores_leftover_apply_trigger() {
-    write_release_config
-    yq -i '(.stacks[] | select(.name == "terragrunt") | .environments.develop.apply_trigger) = "release"' workflow-config.yaml
-    mkdir -p dystopia/monolith/infrastructure/aws/{develop,production}
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
-    assert_eq "production" "$(jq -r 'map(.environment) | join(" ")' <<<"${targets}")"
-}
-
-test_release_targets_finds_other_products() {
-    write_release_config
-    mkdir -p system-components/pennyworth/infrastructure/aws/production dystopia/monolith/infrastructure/aws/production
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" pennyworth)"
-    assert_eq "1" "$(jq 'length' <<<"${targets}")"
-    assert_eq "system-components/pennyworth/infrastructure/aws/production" "$(jq -r '.[0].working_directory' <<<"${targets}")"
-}
-
-test_release_targets_returns_empty_without_dirs() {
-    write_release_config
-    mkdir -p dystopia/frontend
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" frontend)"
-    assert_eq "[]" "${targets}"
-}
-
-test_release_targets_skips_excluded_envs() {
-    write_release_config '[{environment: production}]'
-    mkdir -p dystopia/monolith/infrastructure/aws/production
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
-    assert_eq "[]" "${targets}"
-}
-
-test_release_targets_honors_product_scoped_exclude() {
-    write_release_config '[{product: system-components, environment: production}]'
-    mkdir -p system-components/pennyworth/infrastructure/aws/production dystopia/monolith/infrastructure/aws/production
-    local targets
-    targets="$(bash "${script_dir}/release-targets.sh" pennyworth)"
-    assert_eq "[]" "${targets}"
-    targets="$(bash "${script_dir}/release-targets.sh" monolith)"
-    assert_eq "dystopia/monolith/infrastructure/aws/production" "$(jq -r '.[0].working_directory' <<<"${targets}")"
+test_release_targets_returns_empty_for_empty_input() {
+    assert_eq "[]" "$(bash "${script_dir}/release-targets.sh" <<<'[]')"
 }
 
 write_service_release_config() {
@@ -287,36 +212,6 @@ test_check_configs_rejects_duplicate_service() {
     write_service_release_config system-components/monolith
     assert_fails check_configs
     assert_stderr_contains "component monolith is used by more than one package: dystopia/monolith system-components/monolith"
-}
-
-write_service_root_release_config() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: terragrunt
-    paths:
-      - "aws/{service}/{environment}"
-      - "github/{service}/{environment}"
-    environments:
-      master:
-        aws_region: ap-northeast-1
-        iam_role_plan: arn:aws:iam::111111111111:role/master-plan
-        iam_role_apply: arn:aws:iam::111111111111:role/master-apply
-      develop:
-        aws_region: ap-northeast-1
-        iam_role_plan: arn:aws:iam::333333333333:role/develop-plan
-        iam_role_apply: arn:aws:iam::333333333333:role/develop-apply
-      production:
-        aws_region: ap-northeast-1
-        iam_role_plan: arn:aws:iam::222222222222:role/production-plan
-        iam_role_apply: arn:aws:iam::222222222222:role/production-apply
-YAML
-    mkdir -p aws/vpc/master aws/vpc/develop aws/vpc/production
-}
-
-test_release_targets_lists_service_root_release_envs() {
-    write_service_root_release_config
-    local expected='[{"service":"vpc","environment":"production","working_directory":"aws/vpc/production","aws_region":"ap-northeast-1","iam_role_plan":"arn:aws:iam::222222222222:role/production-plan","iam_role_apply":"arn:aws:iam::222222222222:role/production-apply"}]'
-    assert_eq "${expected}" "$(bash "${script_dir}/release-targets.sh" vpc)"
 }
 
 failed=0

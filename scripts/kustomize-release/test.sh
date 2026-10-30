@@ -14,54 +14,22 @@ assert_eq() {
     fi
 }
 
-write_config() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: container
-    paths:
-      - "dystopia/{service}"
-  - name: kustomize
-    paths:
-      - "dystopia/{service}/kubernetes/overlays/{environment}"
-      - "system-components/{service}/kubernetes/overlays/{environment}"
-YAML
+resolver_targets='[
+    {"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},
+    {"service":"monolith","environment":"develop","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/develop","type":"kustomize"},
+    {"service":"monolith","environment":"production","stack":"terragrunt","working_directory":"dystopia/monolith/infrastructure/aws/production","type":"terragrunt","aws_region":"ap-northeast-1"},
+    {"service":"monolith","stack":"container","working_directory":"dystopia/monolith","type":"container"}
+]'
+
+test_release_kustomizations_maps_production_overlays() {
+    local expected='[{"service":"monolith","environment":"production","kustomization_directory":"dystopia/monolith/kubernetes/overlays/production"}]'
+    assert_eq "${expected}" "$(bash "${script_dir}/release-kustomizations.sh" <<<"${resolver_targets}")"
 }
 
-test_release_kustomizations_lists_the_production_overlay() {
-    write_config
-    mkdir -p dystopia/monolith/kubernetes/overlays/{develop,production}
-    local expected='[{"service":"monolith","environment":"production","kustomization_directory":"dystopia/monolith/kubernetes/overlays/production"}]' kustomizations
-    kustomizations="$(bash "${script_dir}/release-kustomizations.sh" monolith)"
-    assert_eq "${expected}" "${kustomizations}"
-}
-
-test_release_kustomizations_finds_other_products() {
-    write_config
-    mkdir -p system-components/pennyworth/kubernetes/overlays/production dystopia/monolith/kubernetes/overlays/production
-    local kustomizations
-    kustomizations="$(bash "${script_dir}/release-kustomizations.sh" pennyworth)"
-    assert_eq "system-components/pennyworth/kubernetes/overlays/production" "$(jq -r 'map(.kustomization_directory) | join(" ")' <<<"${kustomizations}")"
-}
-
-test_release_kustomizations_returns_empty_without_overlay() {
-    write_config
-    mkdir -p dystopia/lambda
-    local kustomizations
-    kustomizations="$(bash "${script_dir}/release-kustomizations.sh" lambda)"
-    assert_eq "[]" "${kustomizations}"
-}
-
-test_release_kustomizations_returns_empty_without_kustomize_stack() {
-    cat > workflow-config.yaml <<'YAML'
-stacks:
-  - name: helmfile
-    paths:
-      - "kubernetes/components/{service}/{environment}"
-YAML
-    mkdir -p kubernetes/components/cilium/production
-    local kustomizations
-    kustomizations="$(bash "${script_dir}/release-kustomizations.sh" cilium)"
-    assert_eq "[]" "${kustomizations}"
+test_release_kustomizations_returns_empty_without_kustomize_targets() {
+    local targets
+    targets="$(jq -c 'map(select(.type != "kustomize"))' <<<"${resolver_targets}")"
+    assert_eq "[]" "$(bash "${script_dir}/release-kustomizations.sh" <<<"${targets}")"
 }
 
 init_origin_with_tags() {

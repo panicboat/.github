@@ -26,11 +26,6 @@ jobs:
       targets: ${{ steps.resolve.outputs.targets }}
       tag: ${{ steps.resolve.outputs.tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ env.TAG }}
-
       - name: Checkout shared workflows
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,12 +34,29 @@ jobs:
           path: .shared-workflows
           persist-credentials: false
 
-      - name: Resolve release targets
-        id: resolve
+      - name: Parse release service
+        id: service
         run: |
           set -euo pipefail
           service=$(bash .shared-workflows/scripts/terragrunt-release/release-service.sh --tag "$TAG")
-          targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh "$service")
+          echo "service=$service" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve service targets
+        id: resolver
+        uses: panicboat/deploy-actions/label-resolver@9c5aea836b982c12d283c4bea8fac965d7242eda # v3.1.0
+        with:
+          repository: ${{ github.repository }}
+          service: ${{ steps.service.outputs.service }}
+          environments: production
+          ref: ${{ env.TAG }}
+
+      - name: Resolve release targets
+        id: resolve
+        env:
+          TARGETS: ${{ steps.resolver.outputs.targets }}
+        run: |
+          set -euo pipefail
+          targets=$(bash .shared-workflows/scripts/terragrunt-release/release-targets.sh <<<"$TARGETS")
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
