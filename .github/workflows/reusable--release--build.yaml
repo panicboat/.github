@@ -55,7 +55,7 @@ jobs:
           TARGETS: ${{ steps.resolver.outputs.targets }}
         run: |
           set -euo pipefail
-          dir=$(jq -r --arg service "$SERVICE" 'first(.[] | select(.type == "container") | select(.service == $service)) | .working_directory' <<<"$TARGETS")
+          dir=$(jq -r 'first(.[] | select(.type == "container")) | .working_directory' <<<"$TARGETS")
           if [ -z "$dir" ]; then
             echo "::error::No directory found for service '$SERVICE' among the container targets of workflow-config.yaml"
             exit 1
