@@ -14,6 +14,13 @@ assert_eq() {
     fi
 }
 
+assert_fails() {
+    if "$@" 2>/dev/null; then
+        echo "  expected a non-zero exit: $*" >&2
+        exit 1
+    fi
+}
+
 resolver_targets='[
     {"service":"monolith","environment":"production","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/production","type":"kustomize"},
     {"service":"monolith","environment":"develop","stack":"kubernetes","working_directory":"dystopia/monolith/kubernetes/overlays/develop","type":"kustomize"},
@@ -30,6 +37,10 @@ test_release_kustomizations_returns_empty_without_kustomize_targets() {
     local targets
     targets="$(jq -c 'map(select(.type != "kustomize"))' <<<"${resolver_targets}")"
     assert_eq "[]" "$(bash "${script_dir}/release-kustomizations.sh" <<<"${targets}")"
+}
+
+test_release_kustomizations_rejects_empty_stdin() {
+    assert_fails bash "${script_dir}/release-kustomizations.sh" </dev/null
 }
 
 init_origin_with_tags() {

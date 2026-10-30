@@ -79,6 +79,10 @@ test_release_targets_returns_empty_for_empty_input() {
     assert_eq "[]" "$(bash "${script_dir}/release-targets.sh" <<<'[]')"
 }
 
+test_release_targets_rejects_empty_stdin() {
+    assert_fails bash "${script_dir}/release-targets.sh" </dev/null
+}
+
 write_service_release_config() {
     local package="$1" component="${2:-${1##*/}}" exclude_paths="${3:-[\"$1/infrastructure/aws/develop\"]}"
     mkdir -p "${package}"
