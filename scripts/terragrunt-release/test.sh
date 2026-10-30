@@ -192,6 +192,21 @@ test_check_configs_rejects_candidates_that_are_not_an_array() {
     assert_stderr_contains "::error::"
 }
 
+test_check_configs_rejects_missing_candidates_path() {
+    assert_fails bash "${script_dir}/check-release-configs.sh"
+    assert_stderr_contains "::error::usage: check-release-configs.sh <candidates_json_path>"
+}
+
+test_check_configs_rejects_candidates_that_are_not_objects_with_a_target() {
+    local candidates
+    for candidates in '[1]' '[null]' '[{"target":1}]' '[{"root":"dystopia/monolith"}]'; do
+        echo "${candidates}" > candidates.json
+        assert_fails check_configs
+        assert_stderr_contains "::error::"
+        assert_eq "1" "$(printf '%s\n' "${last_stderr}" | wc -l | tr -d ' ')"
+    done
+}
+
 test_check_configs_ignores_exclude_paths() {
     write_candidates "$(terragrunt_candidate monolith dystopia/monolith)"
     write_service_release_config dystopia/monolith monolith '["unrelated/path"]'
