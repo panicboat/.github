@@ -71,6 +71,8 @@ jobs:
     with:
       image-name: ${{ needs.detect-component.outputs.service }}
       working-directory: ${{ needs.detect-component.outputs.working-directory }}
+      # The ref of a dispatched run is not the source of the release.
+      ref: ${{ needs.detect-component.outputs.tag }}
       app-id: ${{ inputs.app-id }}
       semver-tag: ${{ needs.detect-component.outputs.version }}
       release-tag: ${{ needs.detect-component.outputs.tag }}

@@ -193,6 +193,18 @@ test_release_build_tags_the_release_tag() {
     grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
 }
 
+test_release_build_checks_out_the_release_tag() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq 'false' "$(yq '.on.workflow_call.inputs.ref.required' "${builder}")"
+    assert_eq 'string' "$(yq '.on.workflow_call.inputs.ref.type' "${builder}")"
+    assert_eq "" "$(yq '.on.workflow_call.inputs.ref.default' "${builder}")"
+    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["build-and-push"].steps[] | select(.name == "Checkout repository") | .with.ref' "${builder}")"
+    assert_eq '${{ needs.detect-component.outputs.tag }}' "$(yq '.jobs["container-build"].with.ref' "${build}")"
+    assert_eq 'null' "$(yq '.jobs["deploy-container"].with.ref' "${resolver}")"
+}
+
 test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
