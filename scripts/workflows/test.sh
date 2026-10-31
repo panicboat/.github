@@ -205,6 +205,42 @@ test_release_build_checks_out_the_release_tag() {
     assert_eq 'null' "$(yq '.jobs["deploy-container"].with.ref' "${resolver}")"
 }
 
+test_release_build_parses_tags_with_the_release_service_script() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local job='.jobs["detect-component"]'
+    local step run work status out spec tag service version
+    assert_eq '.shared-workflows' "$(yq "${job}.steps[0].with.path" "${build}")"
+    assert_eq '${{ job.workflow_repository }}' "$(yq "${job}.steps[0].with.repository" "${build}")"
+    assert_eq '${{ job.workflow_sha }}' "$(yq "${job}.steps[0].with.ref" "${build}")"
+    step="$(yq "${job}.steps[] | select(.id == \"parse\")" "${build}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -c '=~' <<<"${run}" || true)"
+    assert_eq '${{ steps.parse.outputs.version }}' "$(yq "${job}.outputs.version" "${build}")"
+    assert_eq '${{ needs.detect-component.outputs.version }}' "$(yq '.jobs["container-build"].with["semver-tag"]' "${build}")"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    ln -s "${repo_root}" "${work}/.shared-workflows"
+    for spec in monolith:v0.9.0 github-oidc-auth:v1.2.3 route53:v1.0.0 oauth2-proxy:v10.20.30 my_Service2:v1.0.0 api-v2:v3.0.0; do
+        service="${spec%%:*}"
+        version="${spec##*:}"
+        tag="${service}-${version}"
+        rm -f "${work}/output"
+        (cd "${work}" && GITHUB_OUTPUT="${work}/output" TAG="${tag}" bash -c "${run}")
+        assert_eq "$(printf 'service=%s\nversion=%s\ntag=%s' "${service}" "${version}" "${tag}")" "$(cat "${work}/output")"
+    done
+
+    for tag in v1.0.0 monolith kubernetes-production a.b-v1.0.0 monolith-v1.2 ''; do
+        rm -f "${work}/output"
+        status=0
+        out="$(cd "${work}" && GITHUB_OUTPUT="${work}/output" TAG="${tag}" bash -c "${run}" 2>&1)" || status=$?
+        assert_eq "1" "${status}"
+        [[ "${out}" == *"::error::"* ]] || { echo "  no error annotation: ${out}" >&2; exit 1; }
+        [ ! -e "${work}/output" ]
+    done
+}
+
 test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -218,7 +254,8 @@ test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.with.ref' <<<"${step}")"
     assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
     assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
-    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
+    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${build}")"
+    assert_eq "1" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
 
     step="$(yq "${job}.steps[] | select(.id == \"resolve-dir\")" "${build}")"
     run="$(yq '.run' <<<"${step}")"
