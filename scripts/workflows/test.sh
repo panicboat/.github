@@ -205,6 +205,15 @@ test_release_build_checks_out_the_release_tag() {
     assert_eq 'null' "$(yq '.jobs["deploy-container"].with.ref' "${resolver}")"
 }
 
+test_image_builder_moves_latest_only_without_a_ref() {
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    local tags
+    tags="$(yq '.jobs["build-and-push"].steps[] | select(.id == "meta") | .with.tags' "${builder}")"
+    grep -qxF "type=raw,value=latest,enable=\${{ inputs.ref == '' && '{{is_default_branch}}' || 'false' }}" <<<"${tags}"
+    grep -qxF 'type=sha' <<<"${tags}"
+    grep -qxF 'type=raw,value=${{ github.actor }}' <<<"${tags}"
+}
+
 test_release_build_parses_tags_with_the_release_service_script() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local job='.jobs["detect-component"]'
