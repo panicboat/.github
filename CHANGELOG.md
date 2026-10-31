@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/panicboat/.github/compare/v0.2.1...v0.3.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* drop the config-path input and fail on pull request lookup errors ([#49](https://github.com/panicboat/.github/issues/49))
+
+### Features
+
+* drop the config-path input and fail on pull request lookup errors ([#49](https://github.com/panicboat/.github/issues/49)) ([0fce505](https://github.com/panicboat/.github/commit/0fce505c8dd2dbf77023d5200c14be5591fd94a9))
+
 ## [0.2.1](https://github.com/panicboat/.github/compare/v0.2.0...v0.2.1) (2026-10-31)
 
 
