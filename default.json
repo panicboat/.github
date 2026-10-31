@@ -36,17 +36,6 @@
       ]
     },
     {
-      "description": "🚫 Production environments - disable automerge",
-      "matchFileNames": [
-        "**/production/**"
-      ],
-      "automerge": false,
-      "prPriority": -1,
-      "addLabels": [
-        "⚠️ production"
-      ]
-    },
-    {
       "description": "🚫 Major updates - disable automerge",
       "matchUpdateTypes": [
         "major"
@@ -72,6 +61,17 @@
         "panicboat/.github"
       ],
       "minimumReleaseAge": null
+    },
+    {
+      "description": "🚫 Production environments - disable automerge",
+      "matchFileNames": [
+        "**/production/**"
+      ],
+      "automerge": false,
+      "prPriority": -1,
+      "addLabels": [
+        "⚠️ production"
+      ]
     }
   ]
 }

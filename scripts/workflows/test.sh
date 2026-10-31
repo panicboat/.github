@@ -49,6 +49,12 @@ test_resolver_skips_label_resolver_without_a_pull_request() {
     assert_eq "needs.resolve.outputs.has-targets == 'true' &&" "$(yq '.jobs["deploy-terragrunt"].if' "${workflow}" | head -n 1)"
 }
 
+test_renovate_keeps_production_out_of_automerge() {
+    # Renovate applies matching packageRules in order, so a later rule overrides the production rule.
+    assert_eq "false" "$(jq -r '[.packageRules[] | select(.automerge != null) | select(.matchFileNames // [] | index("**/production/**"))][0].automerge' "${repo_root}/default.json")"
+    assert_eq "production" "$(jq -r '[.packageRules[] | select(.automerge != null)] | last | if (.matchFileNames // [] | index("**/production/**")) != null then "production" else "other" end' "${repo_root}/default.json")"
+}
+
 test_workflows_do_not_read_apply_trigger() {
     assert_eq "" "$(grep -rl --exclude='*test.sh' 'apply_trigger\|validate-apply-trigger' "${workflows_dir}" "${repo_root}/scripts" || true)"
 }
