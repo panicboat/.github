@@ -115,6 +115,25 @@ test_renovate_keeps_production_out_of_automerge() {
     assert_eq "production" "$(jq -r '[.packageRules[] | select(.automerge != null)] | last | if (.matchFileNames // [] | index("**/production/**")) != null then "production" else "other" end' "${repo_root}/default.json")"
 }
 
+test_label_base_deploy_fails_when_the_pull_request_lookup_fails() {
+    local name
+    for name in dispatcher resolver; do
+        assert_eq "null" "$(yq '.jobs[].steps[] | select(.id == "pr-info") | .continue-on-error' "${workflows_dir}/reusable--label-base-deploy--${name}.yaml")"
+    done
+}
+
+test_label_base_deploy_reads_the_default_config_path() {
+    local name
+    for name in dispatcher resolver; do
+        assert_eq "null" "$(yq '.on.workflow_call.inputs["config-path"]' "${workflows_dir}/reusable--label-base-deploy--${name}.yaml")"
+    done
+}
+
+test_claude_job_does_not_expose_the_backend() {
+    assert_eq "null" "$(yq '.on.workflow_call.outputs.backend' "${claude_workflow}")"
+    assert_eq "null" "$(yq '.jobs.claude.outputs.backend' "${claude_workflow}")"
+}
+
 test_workflows_do_not_read_apply_trigger() {
     assert_eq "" "$(grep -rl --exclude='*test.sh' 'apply_trigger\|validate-apply-trigger' "${workflows_dir}" "${repo_root}/scripts" || true)"
 }

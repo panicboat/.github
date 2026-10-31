@@ -8,11 +8,6 @@ on:
         required: true
         type: string
         description: 'GitHub App ID for authentication'
-      config-path:
-        required: false
-        type: string
-        default: 'workflow-config.yaml'
-        description: 'Path to the workflow config that maps stack paths to services'
     secrets:
       private-key:
         required: true
@@ -38,7 +33,6 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           state: all
-        continue-on-error: true
 
       - name: Dispatch Labels
         uses: panicboat/deploy-actions/label-dispatcher@9c5aea836b982c12d283c4bea8fac965d7242eda # v0.1.0
@@ -46,4 +40,3 @@ jobs:
           pr-number: ${{ steps.pr-info.outputs.number }}
           repository: ${{ github.repository }}
           github-token: ${{ steps.app-token.outputs.token }}
-          config-path: ${{ inputs.config-path }}
