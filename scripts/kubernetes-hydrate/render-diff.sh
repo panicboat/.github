@@ -29,6 +29,11 @@ git worktree add -q --detach "${work}/head" HEAD
 
 render() {
     local side="$1" svc="$2" env="$3" dir="$4"
+    # hydrate-component.sh refuses a missing component, which here means the side before it was added or after it was deleted.
+    if [ ! -d "${work}/${side}/kubernetes/components/${svc}/${env}" ]; then
+        : > "${dir}/${side}.yaml"
+        return 0
+    fi
     (cd "${work}/${side}" && bash "${script_dir}/hydrate-component.sh" "${svc}" "${env}") > "${dir}/${side}.log" 2>&1 &&
         cp "${work}/${side}/kubernetes/manifests/${env}/${svc}/manifest.yaml" "${dir}/${side}.yaml"
 }

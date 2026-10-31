@@ -9,6 +9,12 @@ cd "$(git rev-parse --show-toplevel)"
 component_dir="kubernetes/components/${component}/${env}"
 out_dir="kubernetes/manifests/${env}/${component}"
 
+# Flux with prune: true would delete the live resources of an empty manifest.
+if [ ! -f "${component_dir}/helmfile.yaml" ] && [ ! -d "${component_dir}/kustomization" ]; then
+    echo "hydrate-component.sh: ${component_dir} has neither helmfile.yaml nor kustomization/; refusing to write an empty manifest" >&2
+    exit 1
+fi
+
 # Explicit --kube-version prevents template divergence caused by varying default helm binary versions.
 env_hcl="aws/eks/${env}/env.hcl"
 if [ ! -f "${env_hcl}" ]; then
