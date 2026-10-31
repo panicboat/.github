@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/panicboat/.github/compare/v0.2.0...v0.2.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* harden release builds and helmfile hydration ([#48](https://github.com/panicboat/.github/issues/48)) ([5181a1c](https://github.com/panicboat/.github/commit/5181a1c0d8e3e338de79aa31736538dc2cb0b1b6))
+* keep production dependency updates out of automerge ([#46](https://github.com/panicboat/.github/issues/46)) ([ffacddd](https://github.com/panicboat/.github/commit/ffacdddf66dbf6eaa69335c5d5eb98acd034ee6c))
+
 ## [0.2.0](https://github.com/panicboat/.github/compare/v0.1.2...v0.2.0) (2026-10-30)
 
 
