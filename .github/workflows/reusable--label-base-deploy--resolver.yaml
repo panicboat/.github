@@ -8,11 +8,6 @@ on:
         required: true
         type: string
         description: 'GitHub App ID for authentication'
-      config-path:
-        required: false
-        type: string
-        default: 'workflow-config.yaml'
-        description: 'Path to the workflow config that defines the stacks and services'
     secrets:
       private-key:
         required: true
@@ -43,7 +38,6 @@ jobs:
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           state: all
-        continue-on-error: true
 
       # Flux pushes image updates to main with no pull request, and the action rejects an empty pr-number.
       - name: Label Resolver
@@ -54,7 +48,6 @@ jobs:
           repository: ${{ github.repository }}
           pr-number: ${{ steps.pr-info.outputs.number }}
           github-token: ${{ steps.app-token.outputs.token }}
-          config-path: ${{ inputs.config-path }}
 
   deploy-terragrunt:
     name: 'Deploy Terragrunt (${{ matrix.target.service }}:${{ matrix.target.environment }})'

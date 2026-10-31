@@ -74,9 +74,6 @@ on:
       passed:
         description: 'Verdict of a docs-sync run'
         value: ${{ jobs.claude.outputs.passed }}
-      backend:
-        description: 'Backend that produced the output (subscription or bedrock)'
-        value: ${{ jobs.claude.outputs.backend }}
 
 jobs:
   claude:
@@ -92,7 +89,6 @@ jobs:
     outputs:
       body: ${{ steps.check.outputs.body }}
       passed: ${{ steps.check.outputs.passed }}
-      backend: ${{ steps.check.outputs.backend }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -297,7 +293,6 @@ jobs:
             backend=bedrock
             output="$BEDROCK_OUTPUT"
           fi
-          echo "backend=${backend}" >> "$GITHUB_OUTPUT"
           if verdict="$(STRUCTURED_OUTPUT="$output" bash .shared-workflows/scripts/review-output/check.sh "$OUTPUT_KIND")"; then
             body="$(jq -r '.body' <<<"$verdict")"
             if [ "$backend" = "bedrock" ]; then
