@@ -44,6 +44,7 @@ git -C "${repo}" -c user.name=test -c user.email=test@example.com commit -q -m b
 write_deployment "${repo}/kubernetes/components/demo/production" demo nginx:1.1
 echo "# changed" >> "${repo}/kubernetes/components/demo/namespace.yaml"
 git -C "${repo}" rm -q -r kubernetes/components/gone
+write_deployment "${repo}/kubernetes/components/added/production" added alpine:3
 write_deployment "${repo}/kubernetes/components/pending-only/pending" pending-only busybox:1.36
 write_deployment "${repo}/kubernetes/components/broken/production" broken busybox:1.36
 printf 'resources:\n  - missing.yaml\n' > "${repo}/kubernetes/components/broken/production/kustomization/kustomization.yaml"
@@ -60,6 +61,7 @@ expect_contains "links the full diff" "production/demo/manifest.diff" "${summary
 expect_contains "writes the full diff" "+      - image: nginx:1.1" "${out}/production/demo/manifest.diff"
 expect_contains "lists a deleted component" "## gone (production)" "${summary}"
 expect_contains "reports resources of a deleted component as removed" "- Deployment gone" "${summary}"
+expect_contains "reports resources of an added component as added" "- Deployment added" "${summary}"
 expect_contains "reports a render failure instead of aborting" "Rendering failed (head)" "${summary}"
 expect_contains "skips directories that are not hydrated environments" "Not rendered:" "${summary}"
 if [ -d "${out}/pending" ]; then fail "does not render directories that are not hydrated environments"; else pass "does not render directories that are not hydrated environments"; fi

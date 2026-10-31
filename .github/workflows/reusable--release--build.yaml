@@ -22,6 +22,14 @@ jobs:
       tag: ${{ steps.parse.outputs.tag }}
       working-directory: ${{ steps.resolve-dir.outputs.working-directory }}
     steps:
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
       - name: Parse tag
         id: parse
         env:
@@ -29,15 +37,10 @@ jobs:
           TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^([a-z-]+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            echo "::error::Tag '$TAG' does not match expected pattern <service>-v<X.Y.Z>"
-            exit 1
-          fi
-          SERVICE="${BASH_REMATCH[1]}"
-          VERSION="v${BASH_REMATCH[2]}"
+          service=$(bash .shared-workflows/scripts/terragrunt-release/release-service.sh --tag "$TAG")
           {
-            echo "service=$SERVICE"
-            echo "version=$VERSION"
+            echo "service=$service"
+            echo "version=${TAG#"$service"-}"
             echo "tag=$TAG"
           } >> "$GITHUB_OUTPUT"
       # Container targets carry no environment, so environments is not passed.
@@ -71,6 +74,8 @@ jobs:
     with:
       image-name: ${{ needs.detect-component.outputs.service }}
       working-directory: ${{ needs.detect-component.outputs.working-directory }}
+      # The ref of a dispatched run is not the source of the release.
+      ref: ${{ needs.detect-component.outputs.tag }}
       app-id: ${{ inputs.app-id }}
       semver-tag: ${{ needs.detect-component.outputs.version }}
       release-tag: ${{ needs.detect-component.outputs.tag }}

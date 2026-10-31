@@ -32,6 +32,66 @@ test_resolver_routes_targets_by_type() {
     yq '.jobs["helmfile-targets-group"].steps[] | select(.id == "group") | .run' "${resolver}" | grep -qF 'select(.type == "helmfile")'
 }
 
+test_resolver_groups_environments_with_orphaned_manifests() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local job='.jobs["helmfile-targets-group"]'
+    local run work repo targets
+    assert_eq "needs.resolve.result == 'success'" "$(yq "${job}.if" "${resolver}")"
+    assert_eq 'actions/checkout@*' "$(yq "${job}.steps[0].uses | sub(\"@.*\", \"@*\")" "${resolver}")"
+    assert_eq 'null' "$(yq "${job}.steps[0].with.path" "${resolver}")"
+    assert_eq '.shared-workflows' "$(yq "${job}.steps[1].with.path" "${resolver}")"
+    assert_eq '${{ job.workflow_repository }}' "$(yq "${job}.steps[1].with.repository" "${resolver}")"
+    assert_eq '${{ job.workflow_sha }}' "$(yq "${job}.steps[1].with.ref" "${resolver}")"
+    run="$(yq "${job}.steps[] | select(.id == \"group\") | .run" "${resolver}")"
+    assert_eq '${{ needs.resolve.outputs.targets }}' "$(yq "${job}.steps[] | select(.id == \"group\") | .env.TARGETS" "${resolver}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    group() {
+        rm -f "${work}/output"
+        (cd "$1" && GITHUB_OUTPUT="${work}/output" TARGETS="$2" bash -c "${run}")
+        cat "${work}/output"
+    }
+
+    repo="${work}/no-manifests"
+    mkdir -p "${repo}"
+    git -C "${repo}" init -q
+    ln -s "${repo_root}" "${repo}/.shared-workflows"
+    assert_eq 'environments=[]' "$(group "${repo}" '')"
+    assert_eq 'environments=[]' "$(group "${repo}" '[]')"
+    targets='[{"service":"api","environment":"develop","type":"terragrunt"},{"service":"coredns","environment":"production","type":"helmfile"},{"service":"cilium","environment":"production","type":"helmfile"}]'
+    assert_eq 'environments=[{"environment":"production","services":["coredns","cilium"]}]' "$(group "${repo}" "${targets}")"
+
+    repo="${work}/orphans"
+    mkdir -p "${repo}/kubernetes/manifests/production/gone" "${repo}/kubernetes/manifests/develop/gone"
+    git -C "${repo}" init -q
+    ln -s "${repo_root}" "${repo}/.shared-workflows"
+    assert_eq 'environments=[{"environment":"develop","services":[]},{"environment":"production","services":[]}]' "$(group "${repo}" '')"
+    assert_eq 'environments=[{"environment":"develop","services":[]},{"environment":"production","services":["coredns","cilium"]}]' "$(group "${repo}" "${targets}")"
+}
+
+test_resolver_hydrates_only_listed_environments() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq "needs.helmfile-targets-group.outputs.environments != '[]'" "$(yq '.jobs["deploy-helmfile-hydrate"].if' "${resolver}")"
+    assert_eq '${{ fromJson(needs.helmfile-targets-group.outputs.environments) }}' "$(yq '.jobs["deploy-helmfile-hydrate"].strategy.matrix.env' "${resolver}")"
+    assert_eq '${{ toJson(matrix.env.services) }}' "$(yq '.jobs["deploy-helmfile-hydrate"].with.services' "${resolver}")"
+}
+
+test_resolver_diffs_helmfile_only_for_helmfile_targets() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local expected
+    expected="$(printf '%s\n' "github.event_name == 'pull_request' &&" "needs.resolve.outputs.has-targets == 'true' &&" "contains(needs.resolve.outputs.targets, '\"type\":\"helmfile\"')")"
+    assert_eq "${expected}" "$(yq '.jobs["deploy-helmfile"].if' "${resolver}" | sed '/^$/d')"
+    assert_eq 'resolve deploy-helmfile-hydrate' "$(yq '.jobs["deploy-helmfile"].needs | join(" ")' "${resolver}")"
+}
+
+test_resolver_summarizes_only_runs_with_targets() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq "always() && needs.resolve.outputs.has-targets == 'true'" "$(yq '.jobs["deployment-summary"].if' "${resolver}")"
+    assert_eq 'resolve deploy-terragrunt deploy-container deploy-kustomize deploy-helmfile-hydrate deploy-helmfile' "$(yq '.jobs["deployment-summary"].needs | join(" ")' "${resolver}")"
+}
+
 test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
     local pin_pattern='^panicboat/deploy-actions/label-[a-z]+@([0-9a-f]{40}) # (v[0-9]+\.[0-9]+\.[0-9]+)$'
     local name line pins=""
@@ -139,6 +199,63 @@ test_release_build_tags_the_release_tag() {
     grep -qF "type=raw,value=\${{ inputs.release-tag }},enable=\${{ inputs.release-tag != '' }}" "${builder}"
 }
 
+test_release_build_checks_out_the_release_tag() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq 'false' "$(yq '.on.workflow_call.inputs.ref.required' "${builder}")"
+    assert_eq 'string' "$(yq '.on.workflow_call.inputs.ref.type' "${builder}")"
+    assert_eq "" "$(yq '.on.workflow_call.inputs.ref.default' "${builder}")"
+    assert_eq '${{ inputs.ref }}' "$(yq '.jobs["build-and-push"].steps[] | select(.name == "Checkout repository") | .with.ref' "${builder}")"
+    assert_eq '${{ needs.detect-component.outputs.tag }}' "$(yq '.jobs["container-build"].with.ref' "${build}")"
+    assert_eq 'null' "$(yq '.jobs["deploy-container"].with.ref' "${resolver}")"
+}
+
+test_image_builder_moves_latest_only_without_a_ref() {
+    local builder="${workflows_dir}/internal--image-builder.yaml"
+    local tags
+    tags="$(yq '.jobs["build-and-push"].steps[] | select(.id == "meta") | .with.tags' "${builder}")"
+    grep -qxF "type=raw,value=latest,enable=\${{ inputs.ref == '' && '{{is_default_branch}}' || 'false' }}" <<<"${tags}"
+    grep -qxF 'type=sha' <<<"${tags}"
+    grep -qxF 'type=raw,value=${{ github.actor }}' <<<"${tags}"
+}
+
+test_release_build_parses_tags_with_the_release_service_script() {
+    local build="${workflows_dir}/reusable--release--build.yaml"
+    local job='.jobs["detect-component"]'
+    local step run work status out spec tag service version
+    assert_eq '.shared-workflows' "$(yq "${job}.steps[0].with.path" "${build}")"
+    assert_eq '${{ job.workflow_repository }}' "$(yq "${job}.steps[0].with.repository" "${build}")"
+    assert_eq '${{ job.workflow_sha }}' "$(yq "${job}.steps[0].with.ref" "${build}")"
+    step="$(yq "${job}.steps[] | select(.id == \"parse\")" "${build}")"
+    run="$(yq '.run' <<<"${step}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+    assert_eq "0" "$(grep -c '=~' <<<"${run}" || true)"
+    assert_eq '${{ steps.parse.outputs.version }}' "$(yq "${job}.outputs.version" "${build}")"
+    assert_eq '${{ needs.detect-component.outputs.version }}' "$(yq '.jobs["container-build"].with["semver-tag"]' "${build}")"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    ln -s "${repo_root}" "${work}/.shared-workflows"
+    for spec in monolith:v0.9.0 github-oidc-auth:v1.2.3 route53:v1.0.0 oauth2-proxy:v10.20.30 my_Service2:v1.0.0 api-v2:v3.0.0; do
+        service="${spec%%:*}"
+        version="${spec##*:}"
+        tag="${service}-${version}"
+        rm -f "${work}/output"
+        (cd "${work}" && GITHUB_OUTPUT="${work}/output" TAG="${tag}" bash -c "${run}")
+        assert_eq "$(printf 'service=%s\nversion=%s\ntag=%s' "${service}" "${version}" "${tag}")" "$(cat "${work}/output")"
+    done
+
+    for tag in v1.0.0 monolith kubernetes-production a.b-v1.0.0 monolith-v1.2 ''; do
+        rm -f "${work}/output"
+        status=0
+        out="$(cd "${work}" && GITHUB_OUTPUT="${work}/output" TAG="${tag}" bash -c "${run}" 2>&1)" || status=$?
+        assert_eq "1" "${status}"
+        [[ "${out}" == *"::error::"* ]] || { echo "  no error annotation: ${out}" >&2; exit 1; }
+        [ ! -e "${work}/output" ]
+    done
+}
+
 test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local pin_pattern='^panicboat/deploy-actions/label-resolver@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -152,7 +269,8 @@ test_release_build_resolves_the_container_directory_with_the_label_resolver() {
     assert_eq '${{ steps.parse.outputs.tag }}' "$(yq '.with.ref' <<<"${step}")"
     assert_eq '${{ github.repository }}' "$(yq '.with.repository' <<<"${step}")"
     assert_eq 'null' "$(yq '.with.environments' <<<"${step}")"
-    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
+    assert_eq "0" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\" and .with.path == null)] | length" "${build}")"
+    assert_eq "1" "$(yq "[${job}.steps[] | select(.uses == \"actions/checkout@*\")] | length" "${build}")"
 
     step="$(yq "${job}.steps[] | select(.id == \"resolve-dir\")" "${build}")"
     run="$(yq '.run' <<<"${step}")"

@@ -4,13 +4,16 @@ set -euo pipefail
 mode="${1:-}"
 value="${2:-}"
 
+# The service name rule of deploy-actions' Entities::Service.name_format.
+service_rule='[a-zA-Z0-9_-]+'
+
 case "${mode}" in
     --tag)
-        pattern='^([a-z0-9-]+)-v[0-9]+\.[0-9]+\.[0-9]+$'
+        pattern="^(${service_rule})-v[0-9]+\.[0-9]+\.[0-9]+\$"
         expected='<service>-vX.Y.Z'
         ;;
     --branch)
-        pattern='^release-please--branches--main--components--([a-z0-9-]+)$'
+        pattern="^release-please--branches--main--components--(${service_rule})\$"
         expected='release-please--branches--main--components--<service>'
         ;;
     *)

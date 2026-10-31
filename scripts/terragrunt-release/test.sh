@@ -38,6 +38,26 @@ test_release_service_parses_tag() {
     assert_eq "monolith" "$(bash "${script_dir}/release-service.sh" --tag monolith-v1.2.3)"
 }
 
+test_release_service_keeps_the_hyphens_of_a_tag_service() {
+    assert_eq "github-oidc-auth" "$(bash "${script_dir}/release-service.sh" --tag github-oidc-auth-v1.2.3)"
+    assert_eq "api-v2" "$(bash "${script_dir}/release-service.sh" --tag api-v2-v1.2.3)"
+}
+
+test_release_service_accepts_every_service_name_character() {
+    local service
+    for service in route53 oauth2-proxy my_service MyService 2fa; do
+        assert_eq "${service}" "$(bash "${script_dir}/release-service.sh" --tag "${service}-v1.2.3")"
+        assert_eq "${service}" "$(bash "${script_dir}/release-service.sh" --branch "release-please--branches--main--components--${service}")"
+    done
+}
+
+test_release_service_rejects_other_service_name_characters() {
+    assert_fails bash "${script_dir}/release-service.sh" --tag a.b-v1.2.3
+    assert_stderr_contains "::error::"
+    assert_fails bash "${script_dir}/release-service.sh" --branch release-please--branches--main--components--a.b
+    assert_stderr_contains "::error::"
+}
+
 test_release_service_rejects_root_tag() {
     assert_fails bash "${script_dir}/release-service.sh" --tag v0.1.0
     assert_stderr_contains "::error::"
