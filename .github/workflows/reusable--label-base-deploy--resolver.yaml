@@ -122,29 +122,45 @@ jobs:
   helmfile-targets-group:
     name: 'Group Helmfile Targets by Environment'
     needs: resolve
-    if: |
-      needs.resolve.outputs.has-targets == 'true' &&
-      contains(needs.resolve.outputs.targets, '"type":"helmfile"')
+    if: needs.resolve.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.group.outputs.environments }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .shared-workflows
+          persist-credentials: false
+
       - name: Group by environment
         id: group
         env:
           TARGETS: ${{ needs.resolve.outputs.targets }}
         run: |
           set -euo pipefail
-          grouped=$(echo "$TARGETS" | jq -c '
+          orphaned=$(bash .shared-workflows/scripts/kubernetes-hydrate/orphan-environments.sh)
+          # TARGETS is empty when no pull request was found, and jq emits nothing for empty input.
+          grouped=$(jq -c --argjson orphaned "$orphaned" '
             [.[] | select(.type == "helmfile")]
             | group_by(.environment)
             | map({environment: .[0].environment, services: [.[].service]})
-          ')
+            | . + (($orphaned - map(.environment)) | map({environment: ., services: []}))
+            | sort_by(.environment)
+          ' <<<"${TARGETS:-[]}")
           echo "environments=$grouped" >> "$GITHUB_OUTPUT"
 
   deploy-helmfile-hydrate:
     name: 'Hydrate Helmfile (${{ matrix.env.environment }})'
     needs: helmfile-targets-group
+    if: needs.helmfile-targets-group.outputs.environments != '[]'
     strategy:
       matrix:
         env: ${{ fromJson(needs.helmfile-targets-group.outputs.environments) }}

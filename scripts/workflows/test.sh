@@ -32,6 +32,66 @@ test_resolver_routes_targets_by_type() {
     yq '.jobs["helmfile-targets-group"].steps[] | select(.id == "group") | .run' "${resolver}" | grep -qF 'select(.type == "helmfile")'
 }
 
+test_resolver_groups_environments_with_orphaned_manifests() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local job='.jobs["helmfile-targets-group"]'
+    local run work repo targets
+    assert_eq "needs.resolve.result == 'success'" "$(yq "${job}.if" "${resolver}")"
+    assert_eq 'actions/checkout@*' "$(yq "${job}.steps[0].uses | sub(\"@.*\", \"@*\")" "${resolver}")"
+    assert_eq 'null' "$(yq "${job}.steps[0].with.path" "${resolver}")"
+    assert_eq '.shared-workflows' "$(yq "${job}.steps[1].with.path" "${resolver}")"
+    assert_eq '${{ job.workflow_repository }}' "$(yq "${job}.steps[1].with.repository" "${resolver}")"
+    assert_eq '${{ job.workflow_sha }}' "$(yq "${job}.steps[1].with.ref" "${resolver}")"
+    run="$(yq "${job}.steps[] | select(.id == \"group\") | .run" "${resolver}")"
+    assert_eq '${{ needs.resolve.outputs.targets }}' "$(yq "${job}.steps[] | select(.id == \"group\") | .env.TARGETS" "${resolver}")"
+    assert_eq "0" "$(grep -c '\${{' <<<"${run}" || true)"
+
+    work="$(mktemp -d)"
+    trap "rm -rf '${work}'" EXIT
+    group() {
+        rm -f "${work}/output"
+        (cd "$1" && GITHUB_OUTPUT="${work}/output" TARGETS="$2" bash -c "${run}")
+        cat "${work}/output"
+    }
+
+    repo="${work}/no-manifests"
+    mkdir -p "${repo}"
+    git -C "${repo}" init -q
+    ln -s "${repo_root}" "${repo}/.shared-workflows"
+    assert_eq 'environments=[]' "$(group "${repo}" '')"
+    assert_eq 'environments=[]' "$(group "${repo}" '[]')"
+    targets='[{"service":"api","environment":"develop","type":"terragrunt"},{"service":"coredns","environment":"production","type":"helmfile"},{"service":"cilium","environment":"production","type":"helmfile"}]'
+    assert_eq 'environments=[{"environment":"production","services":["coredns","cilium"]}]' "$(group "${repo}" "${targets}")"
+
+    repo="${work}/orphans"
+    mkdir -p "${repo}/kubernetes/manifests/production/gone" "${repo}/kubernetes/manifests/develop/gone"
+    git -C "${repo}" init -q
+    ln -s "${repo_root}" "${repo}/.shared-workflows"
+    assert_eq 'environments=[{"environment":"develop","services":[]},{"environment":"production","services":[]}]' "$(group "${repo}" '')"
+    assert_eq 'environments=[{"environment":"develop","services":[]},{"environment":"production","services":["coredns","cilium"]}]' "$(group "${repo}" "${targets}")"
+}
+
+test_resolver_hydrates_only_listed_environments() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq "needs.helmfile-targets-group.outputs.environments != '[]'" "$(yq '.jobs["deploy-helmfile-hydrate"].if' "${resolver}")"
+    assert_eq '${{ fromJson(needs.helmfile-targets-group.outputs.environments) }}' "$(yq '.jobs["deploy-helmfile-hydrate"].strategy.matrix.env' "${resolver}")"
+    assert_eq '${{ toJson(matrix.env.services) }}' "$(yq '.jobs["deploy-helmfile-hydrate"].with.services' "${resolver}")"
+}
+
+test_resolver_diffs_helmfile_only_for_helmfile_targets() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    local expected
+    expected="$(printf '%s\n' "github.event_name == 'pull_request' &&" "needs.resolve.outputs.has-targets == 'true' &&" "contains(needs.resolve.outputs.targets, '\"type\":\"helmfile\"')")"
+    assert_eq "${expected}" "$(yq '.jobs["deploy-helmfile"].if' "${resolver}" | sed '/^$/d')"
+    assert_eq 'resolve deploy-helmfile-hydrate' "$(yq '.jobs["deploy-helmfile"].needs | join(" ")' "${resolver}")"
+}
+
+test_resolver_summarizes_only_runs_with_targets() {
+    local resolver="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
+    assert_eq "always() && needs.resolve.outputs.has-targets == 'true'" "$(yq '.jobs["deployment-summary"].if' "${resolver}")"
+    assert_eq 'resolve deploy-terragrunt deploy-container deploy-kustomize deploy-helmfile-hydrate deploy-helmfile' "$(yq '.jobs["deployment-summary"].needs | join(" ")' "${resolver}")"
+}
+
 test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
     local pin_pattern='^panicboat/deploy-actions/label-[a-z]+@([0-9a-f]{40}) # (v[0-9]+\.[0-9]+\.[0-9]+)$'
     local name line pins=""
