@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/panicboat/.github/compare/v0.3.0...v0.3.1) (2026-11-01)
+
+
+### Miscellaneous Chores
+
+* run Renovate overnight and remove the concurrent pull request limit ([#52](https://github.com/panicboat/.github/issues/52)) ([6421e89](https://github.com/panicboat/.github/commit/6421e89b8f838533f6a1fd31bdb63b2aa42c60b3))
+
 ## [0.3.0](https://github.com/panicboat/.github/compare/v0.2.1...v0.3.0) (2026-10-31)
 
 
