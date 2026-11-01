@@ -23,8 +23,8 @@
   "branchPrefix": "renovate/",
   "rangeStrategy": "bump",
   "schedule": [
-    "* 21-23 * * 0-4",
-    "* 0-9 * * 1-5"
+    "* 20-23 * * 0-4",
+    "* 0-8 * * 1-5"
   ],
   "minimumReleaseAge": "1 day",
   "separateMinorPatch": false,
