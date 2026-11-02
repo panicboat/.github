@@ -73,6 +73,17 @@
       "addLabels": [
         "⚠️ production"
       ]
+    },
+    {
+      "description": "✅ Production patch/digest updates - enable automerge",
+      "matchFileNames": [
+        "**/production/**"
+      ],
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
+      "automerge": true
     }
   ]
 }
