@@ -109,10 +109,16 @@ test_resolver_skips_label_resolver_without_a_pull_request() {
     assert_eq "needs.resolve.outputs.has-targets == 'true' &&" "$(yq '.jobs["deploy-terragrunt"].if' "${workflow}" | head -n 1)"
 }
 
-test_renovate_keeps_production_out_of_automerge() {
-    # Renovate applies matching packageRules in order, so a later rule overrides the production rule.
-    assert_eq "false" "$(jq -r '[.packageRules[] | select(.automerge != null) | select(.matchFileNames // [] | index("**/production/**"))][0].automerge' "${repo_root}/default.json")"
-    assert_eq "production" "$(jq -r '[.packageRules[] | select(.automerge != null)] | last | if (.matchFileNames // [] | index("**/production/**")) != null then "production" else "other" end' "${repo_root}/default.json")"
+test_renovate_automerges_production_except_major() {
+    # Renovate applies matching packageRules in order, so the last matching rule decides automerge.
+    local type expected
+    for type in major minor patch pin digest; do
+        case "${type}" in
+            major) expected="false" ;;
+            *) expected="true" ;;
+        esac
+        assert_eq "${expected}" "$(jq -r --arg type "${type}" '[.packageRules[] | select(.automerge != null) | select(.matchUpdateTypes // [$type] | index($type)) | select(.matchFileNames // ["**/production/**"] | index("**/production/**")) | select(.matchPackageNames // ["*"] | index("*"))] | last | .automerge' "${repo_root}/default.json")"
+    done
 }
 
 test_label_base_deploy_fails_when_the_pull_request_lookup_fails() {

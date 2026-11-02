@@ -47,23 +47,6 @@
       ]
     },
     {
-      "description": "✅ Minor/Patch updates - enable automerge",
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "pin",
-        "digest"
-      ],
-      "automerge": true
-    },
-    {
-      "description": "Shared workflows from panicboat/.github apply without waiting for a release age",
-      "matchPackageNames": [
-        "panicboat/.github"
-      ],
-      "minimumReleaseAge": null
-    },
-    {
       "description": "🚫 Production environments - disable automerge",
       "matchFileNames": [
         "**/production/**"
@@ -73,6 +56,16 @@
       "addLabels": [
         "⚠️ production"
       ]
+    },
+    {
+      "description": "✅ Minor/Patch updates - enable automerge",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true
     }
   ]
 }
