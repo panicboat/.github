@@ -31,5 +31,3 @@ jobs:
 `default.json` は、panicboat のリポジトリで共通の Renovate 設定を持つ。各リポジトリは `extends` にこの preset を書き、そのリポジトリ固有の rule だけを自分の `renovate.json` に残す。
 
 他のリポジトリは `"extends": ["github>panicboat/.github"]` と書く。これは、別のリポジトリに置いた preset を参照する書式として Renovate の docs が示しているものだ。このリポジトリは `"extends": ["local>panicboat/.github"]` と書く。`local>` は対象のリポジトリと同じ platform にある preset を参照する書式で、github.com では `github>` と同じに解決される。
-
-依存の更新は、公開から日を置かずに PR にする。
