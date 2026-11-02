@@ -26,7 +26,7 @@
     "* 21-23 * * 0-4",
     "* 0-8 * * 1-5"
   ],
-  "minimumReleaseAge": null,
+  "minimumReleaseAge": "1 day",
   "separateMinorPatch": false,
   "packageRules": [
     {
@@ -45,6 +45,13 @@
       "addLabels": [
         "📈 major-update"
       ]
+    },
+    {
+      "description": "Shared workflows from panicboat/.github apply without waiting for a release age",
+      "matchPackageNames": [
+        "panicboat/.github"
+      ],
+      "minimumReleaseAge": null
     },
     {
       "description": "🚫 Production environments - disable automerge",
