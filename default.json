@@ -26,7 +26,7 @@
     "* 21-23 * * 0-4",
     "* 0-8 * * 1-5"
   ],
-  "minimumReleaseAge": "1 day",
+  "minimumReleaseAge": null,
   "separateMinorPatch": false,
   "packageRules": [
     {
@@ -47,23 +47,6 @@
       ]
     },
     {
-      "description": "✅ Minor/Patch updates - enable automerge",
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "pin",
-        "digest"
-      ],
-      "automerge": true
-    },
-    {
-      "description": "Shared workflows from panicboat/.github apply without waiting for a release age",
-      "matchPackageNames": [
-        "panicboat/.github"
-      ],
-      "minimumReleaseAge": null
-    },
-    {
       "description": "🚫 Production environments - disable automerge",
       "matchFileNames": [
         "**/production/**"
@@ -75,12 +58,11 @@
       ]
     },
     {
-      "description": "✅ Production patch/digest updates - enable automerge",
-      "matchFileNames": [
-        "**/production/**"
-      ],
+      "description": "✅ Minor/Patch updates - enable automerge",
       "matchUpdateTypes": [
+        "minor",
         "patch",
+        "pin",
         "digest"
       ],
       "automerge": true

@@ -32,4 +32,4 @@ jobs:
 
 他のリポジトリは `"extends": ["github>panicboat/.github"]` と書く。これは、別のリポジトリに置いた preset を参照する書式として Renovate の docs が示しているものだ。このリポジトリは `"extends": ["local>panicboat/.github"]` と書く。`local>` は対象のリポジトリと同じ platform にある preset を参照する書式で、github.com では `github>` と同じに解決される。
 
-`panicboat/.github` への参照は `minimumReleaseAge` を待たずに更新する。共通の workflow は panicboat 自身が release するので、公開から日を置いて様子を見る理由がないためだ。
+依存の更新は、公開から日を置かずに PR にする。

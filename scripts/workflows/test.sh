@@ -109,13 +109,13 @@ test_resolver_skips_label_resolver_without_a_pull_request() {
     assert_eq "needs.resolve.outputs.has-targets == 'true' &&" "$(yq '.jobs["deploy-terragrunt"].if' "${workflow}" | head -n 1)"
 }
 
-test_renovate_automerges_only_patch_and_digest_in_production() {
+test_renovate_automerges_production_except_major() {
     # Renovate applies matching packageRules in order, so the last matching rule decides automerge.
     local type expected
     for type in major minor patch pin digest; do
         case "${type}" in
-            patch | digest) expected="true" ;;
-            *) expected="false" ;;
+            major) expected="false" ;;
+            *) expected="true" ;;
         esac
         assert_eq "${expected}" "$(jq -r --arg type "${type}" '[.packageRules[] | select(.automerge != null) | select(.matchUpdateTypes // [$type] | index($type)) | select(.matchFileNames // ["**/production/**"] | index("**/production/**")) | select(.matchPackageNames // ["*"] | index("*"))] | last | .automerge' "${repo_root}/default.json")"
     done
