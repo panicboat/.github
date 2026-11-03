@@ -46,7 +46,7 @@ jobs:
       # Container targets carry no environment, so environments is not passed.
       - name: Resolve container target
         id: resolver
-        uses: panicboat/deploy-actions/label-resolver@6557dcedb8c9054571ebcde1cad795f6b4d32535 # v0.3.0
+        uses: panicboat/deploy-actions/label-resolver@81c4197ce08032ebc25dc8e85328e901b21916fa # v1.3.0
         with:
           repository: ${{ github.repository }}
           service: ${{ steps.parse.outputs.service }}
