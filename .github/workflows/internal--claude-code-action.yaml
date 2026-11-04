@@ -185,7 +185,7 @@ jobs:
         id: claude
         if: ${{ steps.token.outcome == 'success' }}
         continue-on-error: true
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         env:
           # The action puts the GitHub token in the env, which Bash could read and WebFetch could send out.
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: ${{ contains(inputs.tools, 'Bash') && '1' || '' }}
@@ -252,7 +252,7 @@ jobs:
       - name: Run Claude on Bedrock
         id: claude-bedrock
         if: ${{ steps.fallback.outputs.fallback == 'true' }}
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: ${{ contains(inputs.tools, 'Bash') && '1' || '' }}
           AWS_ACCESS_KEY_ID: ${{ steps.aws-bedrock.outputs.aws-access-key-id }}
