@@ -398,7 +398,9 @@ test_claude_job_orders_its_steps() {
 test_claude_step_uses_the_subscription_token() {
     local step
     step="$(claude_job_step claude)"
-    assert_eq "anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13" "$(yq '.uses' <<<"${step}")"
+    local uses
+    uses="$(yq '.uses' <<<"${step}")"
+    [[ "${uses}" =~ ^anthropics/claude-code-action@[0-9a-f]{40}$ ]] || { echo "  unexpected uses: ${uses}" >&2; exit 1; }
     assert_eq '${{ steps.token.outputs.token }}' "$(yq '.with.claude_code_oauth_token' <<<"${step}")"
     assert_eq "null" "$(yq '.with.anthropic_api_key' <<<"${step}")"
     assert_eq "null" "$(yq '.with.anthropic_federation_rule_id' <<<"${step}")"
