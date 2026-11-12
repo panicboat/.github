@@ -4,8 +4,6 @@
     "config:recommended",
     ":semanticCommits",
     ":separateMajorReleases",
-    "group:monorepos",
-    "group:recommended",
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "semanticCommitScope": "{{packageFileDir}}",
@@ -21,6 +19,7 @@
   "prConcurrentLimit": 0,
   "prHourlyLimit": 5,
   "branchPrefix": "renovate/",
+  "additionalBranchPrefix": "{{#if packageFileDir}}{{packageFileDir}}/{{/if}}",
   "rangeStrategy": "bump",
   "schedule": [
     "* 21-23 * * 0-4",
@@ -29,13 +28,6 @@
   "minimumReleaseAge": "1 day",
   "separateMinorPatch": false,
   "packageRules": [
-    {
-      "description": "Default: separate PRs per package",
-      "groupName": "{{packageFileDir}}/{{depName}}",
-      "matchPackageNames": [
-        "*"
-      ]
-    },
     {
       "description": "🚫 Major updates - disable automerge",
       "matchUpdateTypes": [
