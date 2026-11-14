@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/panicboat/.github/compare/v0.3.2...v0.3.3) (2026-11-14)
+
+
+### Features
+
+* keep only the newest release image in the container cleanup ([8864a2f](https://github.com/panicboat/.github/commit/8864a2f56d5d5387ea9824a105dd9292ea1e8e44))
+
+
+### Bug Fixes
+
+* stop tagging container images with the workflow actor ([b387cc8](https://github.com/panicboat/.github/commit/b387cc820acfec7abe38697021641e8eb900c397))
+
 ## [0.3.2](https://github.com/panicboat/.github/compare/v0.3.1...v0.3.2) (2026-11-12)
 
 
