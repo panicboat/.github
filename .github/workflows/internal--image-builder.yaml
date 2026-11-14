@@ -87,7 +87,6 @@ jobs:
             type=sha
             type=ref,event=pr
             type=raw,value=latest,enable=${{ inputs.ref == '' && '{{is_default_branch}}' || 'false' }}
-            type=raw,value=${{ github.actor }}
             type=semver,pattern={{raw}},value=${{ inputs.semver-tag }},enable=${{ inputs.semver-tag != '' }}
             type=raw,value=${{ inputs.release-tag }},enable=${{ inputs.release-tag != '' }}
 
