@@ -1,4 +1,4 @@
-# Deletes stale pr- and sha- tags and untagged images of the given service containers in ghcr.io.
+# Deletes stale pr- and sha- tags, releases older than the newest, and untagged images of the given service containers in ghcr.io.
 name: 'Reusable - Cleanup Container Images'
 
 on:
@@ -39,6 +39,17 @@ jobs:
           package: ${{ github.event.repository.name }}/${{ matrix.service }}
           delete-tags: ^sha-
           exclude-tags: ^(latest|v\d+\.\d+\.\d+.*)$
+          use-regex: true
+          validate: true
+
+      - name: Clean old release tags
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ github.event.repository.name }}/${{ matrix.service }}
+          delete-tags: ^v\d+\.\d+\.\d+.*$
+          keep-n-tagged: 1
+          exclude-tags: ^latest$
           use-regex: true
           validate: true
 

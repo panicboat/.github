@@ -251,6 +251,15 @@ test_image_builder_does_not_tag_the_actor() {
     assert_eq "0" "$(grep -cF 'github.actor' <<<"${tags}" || true)"
 }
 
+test_cleanup_keeps_only_the_newest_release_image() {
+    local cleanup="${workflows_dir}/reusable--cleanup-container-image.yaml"
+    local step
+    step="$(yq '.jobs["cleanup-container"].steps[] | select(.with["keep-n-tagged"] != null)' "${cleanup}")"
+    assert_eq '^v\d+\.\d+\.\d+.*$' "$(yq '.with["delete-tags"]' <<<"${step}")"
+    assert_eq '1' "$(yq '.with["keep-n-tagged"]' <<<"${step}")"
+    assert_eq '^latest$' "$(yq '.with["exclude-tags"]' <<<"${step}")"
+}
+
 test_release_build_parses_tags_with_the_release_service_script() {
     local build="${workflows_dir}/reusable--release--build.yaml"
     local job='.jobs["detect-component"]'
