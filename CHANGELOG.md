@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.4](https://github.com/panicboat/.github/compare/v0.3.3...v0.3.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* pin deploy-actions back to v0.3.0 ([#80](https://github.com/panicboat/.github/issues/80)) ([6849202](https://github.com/panicboat/.github/commit/6849202e7d5a536c93709290af7de4931d5dec47))
+
+
+### Miscellaneous Chores
+
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.276 ([#78](https://github.com/panicboat/.github/issues/78)) ([5f16edf](https://github.com/panicboat/.github/commit/5f16edfeaf92d37557c544129887c82d7c5fb541))
+
 ## [0.3.3](https://github.com/panicboat/.github/compare/v0.3.2...v0.3.3) (2026-11-14)
 
 
