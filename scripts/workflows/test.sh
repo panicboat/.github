@@ -103,6 +103,17 @@ test_label_base_deploy_pins_both_actions_to_one_deploy_actions_commit() {
     assert_eq "1" "$(sort -u <<<"${pins}" | grep -c .)"
 }
 
+# A pinned commit keeps resolving after its tag is gone, so each pin is checked against the tag on the remote.
+test_deploy_actions_pins_match_their_release_tag() {
+    local pin_pattern='^panicboat/deploy-actions/label-[a-z]+@([0-9a-f]{40}) # (v[0-9]+\.[0-9]+\.[0-9]+)$'
+    local line tagged
+    while IFS= read -r line; do
+        [[ "${line}" =~ ${pin_pattern} ]] || { echo "  unpinned: ${line}" >&2; exit 1; }
+        tagged="$(git ls-remote --tags https://github.com/panicboat/deploy-actions.git "refs/tags/${BASH_REMATCH[2]}" "refs/tags/${BASH_REMATCH[2]}^{}" | tail -n 1 | cut -f 1)"
+        assert_eq "${BASH_REMATCH[1]}" "${tagged}"
+    done < <(grep -rho 'panicboat/deploy-actions/label-[a-z]*@.*' "${workflows_dir}")
+}
+
 test_resolver_skips_label_resolver_without_a_pull_request() {
     local workflow="${workflows_dir}/reusable--label-base-deploy--resolver.yaml"
     assert_eq "steps.pr-info.outputs.number != ''" "$(yq '.jobs.resolve.steps[] | select(.id == "resolver") | .if' "${workflow}")"
