@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5](https://github.com/panicboat/.github/compare/v0.3.4...v0.3.5) (2026-11-18)
+
+
+### Miscellaneous Chores
+
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.277 ([#81](https://github.com/panicboat/.github/issues/81)) ([0eb2de7](https://github.com/panicboat/.github/commit/0eb2de7fff1dca3c924ba59aa088f9f6830e781f))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.278 ([#83](https://github.com/panicboat/.github/issues/83)) ([bb1cdc5](https://github.com/panicboat/.github/commit/bb1cdc58dc4692d9d71b64cad84431d557b48528))
+
 ## [0.3.4](https://github.com/panicboat/.github/compare/v0.3.3...v0.3.4) (2026-11-16)
 
 
