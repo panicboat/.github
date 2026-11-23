@@ -72,14 +72,14 @@ jobs:
 
       - name: Build head manifests
         id: kustomize-head
-        uses: int128/kustomize-action@19a766fc2f43be39d1436d59555033be8aca07db # v1.196.0
+        uses: int128/kustomize-action@07619988ceb21beb5a03d6cb1cacf414a51e8594 # v1.197.0
         with:
           kustomization: ${{ inputs.kustomization-directory }}/kustomization.yaml
           write-individual-files: true
 
       - name: Build base manifests
         id: kustomize-base
-        uses: int128/kustomize-action@19a766fc2f43be39d1436d59555033be8aca07db # v1.196.0
+        uses: int128/kustomize-action@07619988ceb21beb5a03d6cb1cacf414a51e8594 # v1.197.0
         with:
           base-directory: base
           kustomization: ${{ inputs.kustomization-directory }}/kustomization.yaml
