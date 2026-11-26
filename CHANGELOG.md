@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.5](https://github.com/panicboat/.github/compare/v0.3.4...v0.3.5) (2026-11-26)
+
+
+### Features
+
+* split the issue template into background, cause and scope ([#94](https://github.com/panicboat/.github/issues/94)) ([8ccda6c](https://github.com/panicboat/.github/commit/8ccda6c2e66d01b97a80258e3d2d5044dcc28da0))
+
+
+### Miscellaneous Chores
+
+* **.github/workflows:** update actions/create-github-app-token action to v3.4.0 ([#86](https://github.com/panicboat/.github/issues/86)) ([3965294](https://github.com/panicboat/.github/commit/39652943cd61fe0306b41b089c46dc32a94b4501))
+* **.github/workflows:** update amannn/action-semantic-pull-request action to v6.1.3 ([#84](https://github.com/panicboat/.github/issues/84)) ([d4d3ff3](https://github.com/panicboat/.github/commit/d4d3ff37f816ad6aa752a06ea8a3f8d4e47d4226))
+* **.github/workflows:** update amannn/action-semantic-pull-request action to v6.1.4 ([#92](https://github.com/panicboat/.github/issues/92)) ([ee499cf](https://github.com/panicboat/.github/commit/ee499cf8c06bac6eab21ba645ef1300d36e1e9e0))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.277 ([#81](https://github.com/panicboat/.github/issues/81)) ([0eb2de7](https://github.com/panicboat/.github/commit/0eb2de7fff1dca3c924ba59aa088f9f6830e781f))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.278 ([#83](https://github.com/panicboat/.github/issues/83)) ([bb1cdc5](https://github.com/panicboat/.github/commit/bb1cdc58dc4692d9d71b64cad84431d557b48528))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.286 ([#85](https://github.com/panicboat/.github/issues/85)) ([a8dd3bd](https://github.com/panicboat/.github/commit/a8dd3bd47dfddba0e6f95e8361b7e7991e512733))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.289 ([#93](https://github.com/panicboat/.github/issues/93)) ([552c601](https://github.com/panicboat/.github/commit/552c6017918f533a511651e04706588af221a31d))
+* **.github/workflows:** update anthropics/claude-code-action action to v1.0.290 ([#95](https://github.com/panicboat/.github/issues/95)) ([ebf2a72](https://github.com/panicboat/.github/commit/ebf2a72f4a3cc19026a4c1ef248b764c34b1f6a0))
+* **.github/workflows:** update aquaproj/aqua-installer action to v4.1.2 ([#91](https://github.com/panicboat/.github/issues/91)) ([65b71ee](https://github.com/panicboat/.github/commit/65b71eefa1d71068de403f19da0203806f013017))
+* **.github/workflows:** update dataaxiom/ghcr-cleanup-action action to v1.3.0 ([#87](https://github.com/panicboat/.github/issues/87)) ([b9d1bad](https://github.com/panicboat/.github/commit/b9d1bad82f781b0af898ab5294933492558a312b))
+* **.github/workflows:** update int128/diff-action action to v2.44.0 ([#88](https://github.com/panicboat/.github/issues/88)) ([7f299dc](https://github.com/panicboat/.github/commit/7f299dcac650a54af296e31d434a5d1464dabd4b))
+* **.github/workflows:** update int128/kustomize-action action to v1.197.0 ([#89](https://github.com/panicboat/.github/issues/89)) ([21e29bb](https://github.com/panicboat/.github/commit/21e29bb4b55212c40586f417904bb972568e3139))
+* **.github/workflows:** update int128/wait-for-workflows-action action to v1.113.0 ([#90](https://github.com/panicboat/.github/issues/90)) ([be25777](https://github.com/panicboat/.github/commit/be2577765f61dca0e8da7db2b59792fc0cc149fa))
+
 ## [0.3.4](https://github.com/panicboat/.github/compare/v0.3.3...v0.3.4) (2026-11-16)
 
 
